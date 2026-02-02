@@ -254,13 +254,12 @@ public class Kc3SubtitleProvider implements SubtitleProvider {
         Thread downloadThread = new Thread() {
             @Override
             public void run() {
-                String last_modified = table.getValue(key);
+                String last_modified = table.getVersionValue(key);
                 if (!last_modified.equals(commit)) {
                     JsonObject result = KcUtils.downloadResource(resourceClient, download_path, file);
-                    int response_code = -1;
                     if (result.has("response_code")) {
-                        response_code = result.get("response_code").getAsInt();
-                        if (response_code != 304) table.putValue(key, commit);
+                        int response_code = result.get("response_code").getAsInt();
+                        if (response_code != 304) table.putVersionValue(key, commit);
                     }
                 }
             }
@@ -469,8 +468,8 @@ public class Kc3SubtitleProvider implements SubtitleProvider {
                         String filename = String.format(Locale.US, "quotes_%s.json", localeCode);
                         String subtitle_folder = KcUtils.getAppCacheFileDir(fragment.getContext(), "/subtitle/");
                         String subtitle_path = subtitle_folder.concat(filename);
-                        String currentCommit = versionTable.getValue(subtitle_path);
-                        if (commit_log.size() > 0) {
+                        String currentCommit = versionTable.getVersionValue(subtitle_path);
+                        if (!commit_log.isEmpty()) {
                             JsonObject latestData = commit_log.get(0).getAsJsonObject();
                             String latestCommit = latestData.get("sha").getAsString();
                             if (!currentCommit.equals(latestCommit)) {
@@ -546,7 +545,7 @@ public class Kc3SubtitleProvider implements SubtitleProvider {
                     FileOutputStream fos = new FileOutputStream(subtitleFile);
                     fos.write(data.toString().getBytes());
                     fos.close();
-                    versionTable.putValue(subtitle_path, commit);
+                    versionTable.putVersionValue(subtitle_path, commit);
                     Preference subtitleUpdate = fragment.findPreference(PREF_SUBTITLE_UPDATE);
                     subtitleUpdate.setSummary(fragment.getString(R.string.setting_latest_version));
                     subtitleUpdate.setEnabled(false);

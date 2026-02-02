@@ -265,8 +265,8 @@ public class KcwikiSubtitleProvider implements SubtitleProvider  {
 
                         String subtitle_folder = KcUtils.getAppCacheFileDir(fragment.getContext(), "/subtitle/");
                         String subtitle_path = subtitle_folder.concat(filename);
-                        String currentVersion = versionTable.getValue(subtitle_path);
-                        if (versionObject.size() > 0) {
+                        String currentVersion = versionTable.getVersionValue(subtitle_path);
+                        if (!versionObject.isEmpty()) {
                             String newVersion = versionObject.get("version").getAsString();
                             if (!currentVersion.equals(newVersion)) {
                                 String summary = String.format(Locale.US,
@@ -332,7 +332,7 @@ public class KcwikiSubtitleProvider implements SubtitleProvider  {
                     FileOutputStream fos = new FileOutputStream(subtitleFile);
                     fos.write(data.toString().getBytes());
                     fos.close();
-                    versionTable.putValue(subtitle_path, data.get("version").getAsString());
+                    versionTable.putVersionValue(subtitle_path, data.get("version").getAsString());
                     Preference subtitleUpdate = fragment.findPreference(PREF_SUBTITLE_UPDATE);
                     if (subtitleUpdate != null) {
                         subtitleUpdate.setSummary(fragment.getString(R.string.setting_latest_version));

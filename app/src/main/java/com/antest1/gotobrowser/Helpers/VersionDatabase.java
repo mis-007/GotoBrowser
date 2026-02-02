@@ -39,10 +39,14 @@ public class VersionDatabase extends SQLiteOpenHelper {
     }
 
     // for kca_userdata
-    public String getValue(String key) {
+    public String getValue(String key, String prefix) {
+        String prefix_key = prefix + key;
         String value = "_none_";
         SQLiteDatabase db = this.getReadableDatabase();
-        Cursor c = db.query(table_name, null, "KEY=?", new String[]{key}, null, null, null, null);
+        Cursor c = db.query(
+            table_name, null, "KEY=?", new String[]{prefix_key},
+            null, null, null, null
+        );
         try {
             if (c != null && c.getCount() > 0) {
                 c.moveToFirst();
@@ -57,23 +61,32 @@ public class VersionDatabase extends SQLiteOpenHelper {
         return value;
     }
 
-    public void putValue(String key, String value) {
+    public String getVersionValue(String key) {
+        return getValue(key, "");
+    }
+
+    public void putValue(String key, String value, String prefix) {
+        String prefix_key = prefix + key;
         SQLiteDatabase db = this.getWritableDatabase();
         ContentValues values = new ContentValues();
-        values.put("KEY", key);
+        values.put("KEY", prefix_key);
         values.put("VALUE", value);
-        int u = db.update(table_name, values, "KEY=?", new String[]{key});
+        int u = db.update(table_name, values, "KEY=?", new String[]{prefix_key});
         if (u == 0) {
             db.insertWithOnConflict(table_name, null, values, SQLiteDatabase.CONFLICT_REPLACE);
         }
+    }
+
+    public void putVersionValue(String key, String value) {
+        putValue(key, value, "");
     }
 
     public String getDefaultValue() {
         return "_none_";
     }
 
-    public void putDefaultValue(String key) {
-        putValue(key, "_none_");
+    public void putDefaultVersionValue(String key) {
+        putVersionValue(key, getDefaultValue());
     }
 
 }

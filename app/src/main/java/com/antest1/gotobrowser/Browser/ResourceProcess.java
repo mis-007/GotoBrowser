@@ -355,7 +355,7 @@ public class ResourceProcess {
         String defaultVersion = versionTable.getDefaultValue();
         String key = String.format(Locale.US, "|%s|%s", path, version);
 
-        String version_tb = versionTable.getValue(key);
+        String version_tb = versionTable.getVersionValue(key);
         Date parsed = null;
         if (!version_tb.equals(defaultVersion)) {
             try {
@@ -370,7 +370,7 @@ public class ResourceProcess {
             update_flag = parsed.compareTo(new Date()) < 0;
         } else {
             if (!version_tb.equals(defaultVersion)) {
-                versionTable.putDefaultValue(key);
+                versionTable.putDefaultVersionValue(key);
             }
             update_flag = !version_tb.equals(version);
         }
@@ -392,7 +392,7 @@ public class ResourceProcess {
         File file = getImageFile(out_file_path);
 
         Log.e("GOTO-E", "resource_url: " + resource_url);
-        String prevLastModified = versionTable.getValue(update_key);
+        String prevLastModified = versionTable.getVersionValue(update_key);
         boolean isDefaultValue = prevLastModified.equals(versionTable.getDefaultValue());
         if (!file.exists() || isDefaultValue) prevLastModified = null;
 
@@ -405,7 +405,7 @@ public class ResourceProcess {
             if (response_code == 200) {
                 update_flag = true;
                 String last_modified = result.get("last_modified").getAsString();
-                versionTable.putValue(update_key, last_modified);
+                versionTable.putVersionValue(update_key, last_modified);
                 Log.e("GOTO-D", update_key + " last_modified: " + last_modified);
             } else if (response_code == 304) {
                 Log.e("GOTO-D", update_key + " use cached resource (304)");
@@ -433,11 +433,10 @@ public class ResourceProcess {
                     patchStrings = dirMD5(patchFilePath);
                 }
                 String hash = GetMD5HashOfString(patchStrings);
-                if (!patchedFile.exists() ||
-                        update_flag ||
-                        versionTable.getValue(patchFilePath) == null ||
-                        !Objects.equals(versionTable.getValue(patchFilePath), hash)) {
-                    versionTable.putValue(patchFilePath, hash);
+                String patchVersion = versionTable.getVersionValue(patchFilePath);
+                if (!patchedFile.exists() || update_flag || patchVersion == null ||
+                        !Objects.equals(versionTable.getVersionValue(patchFilePath), hash)) {
+                    versionTable.putVersionValue(patchFilePath, hash);
                     Log.e("GOTO", "needs repatch: " + patchedFilePath + " " + hash);
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                         usePatchedCache = patchImage(out_file_path, patchedFilePath, patchFilePath);
@@ -609,7 +608,7 @@ public class ResourceProcess {
         File file = new File(out_file_path);
         Log.e("GOTO-E", "resource_url: " + resource_url);
 
-        String prevLastModified = versionTable.getValue(update_key);
+        String prevLastModified = versionTable.getVersionValue(update_key);
         boolean isDefaultValue = prevLastModified.equals(versionTable.getDefaultValue());
         if (!file.exists() || isDefaultValue) prevLastModified = null;
 
@@ -620,7 +619,7 @@ public class ResourceProcess {
             int response_code = result.get("response_code").getAsInt();
             if (response_code == 200) {
                 String last_modified = result.get("last_modified").getAsString();
-                versionTable.putValue(update_key, last_modified);
+                versionTable.putVersionValue(update_key, last_modified);
                 Log.e("GOTO-D", update_key + " last_modified: " + last_modified);
             } else if (response_code == 304) {
                 Log.e("GOTO-D", update_key + " use cached resource (304)");
@@ -663,7 +662,7 @@ public class ResourceProcess {
         File file = new File(out_file_path);
         Log.e("GOTO-E", "resource_url: " + resource_url);
 
-        String prevLastModified = versionTable.getValue(update_key);
+        String prevLastModified = versionTable.getVersionValue(update_key);
         boolean isDefaultValue = prevLastModified.equals(versionTable.getDefaultValue());
         if (!file.exists() || isDefaultValue) prevLastModified = null;
 
@@ -674,7 +673,7 @@ public class ResourceProcess {
             int response_code = result.get("response_code").getAsInt();
             if (response_code == 200) {
                 String last_modified = result.get("last_modified").getAsString();
-                versionTable.putValue(update_key, last_modified);
+                versionTable.putVersionValue(update_key, last_modified);
                 Log.e("GOTO-D", update_key + " last_modified: " + last_modified);
             } else if (response_code == 304) {
                 Log.e("GOTO-D", update_key + " use cached resource (304)");
