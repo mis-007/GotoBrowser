@@ -54,6 +54,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TimeZone;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
@@ -84,8 +85,6 @@ import static com.antest1.gotobrowser.Helpers.KcEnUtils.GetMD5HashOfString;
 import static com.antest1.gotobrowser.Helpers.KcEnUtils.dirMD5;
 import static com.antest1.gotobrowser.Helpers.KcUtils.downloadResource;
 import static com.antest1.gotobrowser.Helpers.KcUtils.getEmptyStream;
-import static com.antest1.gotobrowser.Helpers.KcUtils.getExpireInfoFromCacheControl;
-import static com.antest1.gotobrowser.Helpers.KcUtils.getStringFromException;
 
 public class ResourceProcess {
     private static final int RES_IMAGE  = 0b0000001;
@@ -95,6 +94,7 @@ public class ResourceProcess {
     private static final int RES_FONT   = 0b0010000;
     private static final int RES_CSS    = 0b0100000;
     private static final int RES_KCSAPI = 0b1000000;
+    private static final String HTTP_DATE_FORMAT = "EEE, dd MMM yyyy HH:mm:ss z";
 
     private static String userAgent;
 
@@ -340,47 +340,36 @@ public class ResourceProcess {
         }
     }
 
-    private JsonObject checkResourceUpdate(Uri source) {
-        SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.ENGLISH);
-        JsonObject update_info = new JsonObject();
-        String version = "";
-        boolean update_flag;
+    private int checkCacheExpired(String expiryDate) {
+        Date parsedExpiryDate = parseHttpDate(expiryDate);
+        if (parsedExpiryDate == null) return -1;
+        return parsedExpiryDate.before(new Date()) ? 1 : 0;
+    }
 
-        String path = source.getPath();
-        if (source.getQueryParameterNames().contains("version")) {
-            version = source.getQueryParameter("version");
-            if (version == null) version = "";
+    public static Date parseHttpDate(String dateString) {
+        try {
+            SimpleDateFormat formatter = new SimpleDateFormat(HTTP_DATE_FORMAT, Locale.US);
+            // HTTP dates are always in GMT
+            formatter.setTimeZone(TimeZone.getTimeZone("GMT"));
+            return formatter.parse(dateString);
+        } catch (ParseException | NullPointerException e) {
+            // If the format is wrong, return current date (expired)
+            return null;
         }
+    }
 
-        String defaultVersion = versionTable.getDefaultValue();
-        String key = String.format(Locale.US, "|%s|%s", path, version);
-
-        String version_tb = versionTable.getVersionValue(key);
-        Date parsed = null;
-        if (!version_tb.equals(defaultVersion)) {
-            try {
-                parsed = formatter.parse(version_tb);
-            } catch (ParseException e) {
-                Log.e("GOTO-E", getStringFromException(e));
-            }
-        }
-
-        if (parsed != null) {
-            Log.e("GOTO-R", "[check] " + key + " : " + version_tb);
-            update_flag = parsed.compareTo(new Date()) < 0;
+    private String getCacheExpiredAt(String cache_control) {
+        Long maxAgeSeconds = KcUtils.extractMaxAge(cache_control);
+        if (maxAgeSeconds != null) {
+            // 3. Calculate expiration
+            Date now = new Date();
+            long expiryMillis = now.getTime() + (maxAgeSeconds * 1000);
+            Date expiryDate = new Date(expiryMillis);
+            SimpleDateFormat sdf = new SimpleDateFormat(HTTP_DATE_FORMAT, Locale.US);
+            return sdf.format(expiryDate);
         } else {
-            if (!version_tb.equals(defaultVersion)) {
-                versionTable.putDefaultVersionValue(key);
-            }
-            update_flag = !version_tb.equals(version);
+            return versionTable.getDefaultValue();
         }
-
-        update_info.addProperty("key", key);
-        update_info.addProperty("update_flag", update_flag);
-        Log.e("GOTO-R", "check resource " + path + ": " + version);
-        Log.e("GOTO-R", update_info.toString());
-
-        return update_info;
     }
 
     private WebResourceResponse processImageDataResource(JsonObject file_info, int resource_type) {
@@ -392,29 +381,39 @@ public class ResourceProcess {
         File file = getImageFile(out_file_path);
 
         Log.e("GOTO-E", "resource_url: " + resource_url);
+        String cacheExpiredDate = versionTable.getCacheControlValue(update_key);
         String prevLastModified = versionTable.getVersionValue(update_key);
-        boolean isDefaultValue = prevLastModified.equals(versionTable.getDefaultValue());
-        if (!file.exists() || isDefaultValue) prevLastModified = null;
+
+        int isCacheExpired = checkCacheExpired(cacheExpiredDate);
+        boolean isDefaultValue = prevLastModified.equals(versionTable.getDefaultValue())
+                || cacheExpiredDate.equals(versionTable.getDefaultValue());
+        if (!file.exists() || isDefaultValue || isCacheExpired == -1) prevLastModified = null;
 
         boolean update_flag = false;
-        JsonObject result = downloadResource(
-                resourceClient, resource_url, file, prevLastModified);
+        if (prevLastModified == null || isCacheExpired == 1) {
+            JsonObject result = downloadResource(
+                    resourceClient, resource_url, file, prevLastModified);
 
-        if (result.has("response_code")) {
-            int response_code = result.get("response_code").getAsInt();
-            if (response_code == 200) {
-                update_flag = true;
-                String last_modified = result.get("last_modified").getAsString();
-                versionTable.putVersionValue(update_key, last_modified);
-                Log.e("GOTO-D", update_key + " last_modified: " + last_modified);
-            } else if (response_code == 304) {
-                Log.e("GOTO-D", update_key + " use cached resource (304)");
+            if (result.has("response_code")) {
+                int response_code = result.get("response_code").getAsInt();
+                if (response_code == 200) {
+                    update_flag = true;
+                    String cache_expired = getCacheExpiredAt(result.get("cache_control").getAsString());
+                    String last_modified = result.get("last_modified").getAsString();
+                    versionTable.putCacheAndVersion(update_key, last_modified, cache_expired);
+                    Log.e("GOTO-D", update_key + " last_modified: " + last_modified);
+                    Log.e("GOTO-D", update_key + " cache_expired: " + cache_expired);
+                } else if (response_code == 304) {
+                    Log.e("GOTO-D", update_key + " use cached resource (304)");
+                } else {
+                    Log.e("GOTO-D", update_key + " response_code: " + response_code);
+                }
             } else {
-                Log.e("GOTO-D", update_key + " response_code: " + response_code);
+                Log.e("GOTO-D", "download error: " + update_key);
+                return promptForRetry(file_info, resource_type);
             }
         } else {
-            Log.e("GOTO", "download error: " + update_key);
-            return promptForRetry(file_info, resource_type);
+            Log.e("GOTO-D", "using cache: " + update_key + " " + cacheExpiredDate);
         }
 
         if (KenPatcher.isPatcherEnabled()) {
@@ -608,27 +607,37 @@ public class ResourceProcess {
         File file = new File(out_file_path);
         Log.e("GOTO-E", "resource_url: " + resource_url);
 
+        String cacheExpiredDate = versionTable.getCacheControlValue(update_key);
         String prevLastModified = versionTable.getVersionValue(update_key);
-        boolean isDefaultValue = prevLastModified.equals(versionTable.getDefaultValue());
-        if (!file.exists() || isDefaultValue) prevLastModified = null;
 
-        JsonObject result = downloadResource(
-                resourceClient, resource_url, file, prevLastModified);
+        int isCacheExpired = checkCacheExpired(cacheExpiredDate);
+        boolean isDefaultValue = prevLastModified.equals(versionTable.getDefaultValue())
+                        || cacheExpiredDate.equals(versionTable.getDefaultValue());
+        if (!file.exists() || isDefaultValue || isCacheExpired == -1) prevLastModified = null;
 
-        if (result.has("response_code")) {
-            int response_code = result.get("response_code").getAsInt();
-            if (response_code == 200) {
-                String last_modified = result.get("last_modified").getAsString();
-                versionTable.putVersionValue(update_key, last_modified);
-                Log.e("GOTO-D", update_key + " last_modified: " + last_modified);
-            } else if (response_code == 304) {
-                Log.e("GOTO-D", update_key + " use cached resource (304)");
+        if (prevLastModified == null || isCacheExpired == 1) {
+            JsonObject result = downloadResource(
+                    resourceClient, resource_url, file, prevLastModified);
+
+            if (result.has("response_code")) {
+                int response_code = result.get("response_code").getAsInt();
+                if (response_code == 200) {
+                    String cache_expired = getCacheExpiredAt(result.get("cache_control").getAsString());
+                    String last_modified = result.get("last_modified").getAsString();
+                    versionTable.putCacheAndVersion(update_key, last_modified, cache_expired);
+                    Log.e("GOTO-D", update_key + " last_modified: " + last_modified);
+                    Log.e("GOTO-D", update_key + " cache_expired: " + cache_expired);
+                } else if (response_code == 304) {
+                    Log.e("GOTO-D", update_key + " use cached resource (304)");
+                } else {
+                    Log.e("GOTO-D", update_key + " response_code: " + response_code);
+                }
             } else {
-                Log.e("GOTO-D", update_key + " response_code: " + response_code);
+                Log.e("GOTO-D", "download error: " + update_key);
+                return promptForRetry(file_info, resource_type);
             }
         } else {
-            Log.e("GOTO", "download error: " + update_key);
-            return promptForRetry(file_info, resource_type);
+            Log.e("GOTO-D", "using cache: " + update_key + " " + cacheExpiredDate);
         }
 
         String voiceSize = String.valueOf(file.length());
@@ -662,26 +671,36 @@ public class ResourceProcess {
         File file = new File(out_file_path);
         Log.e("GOTO-E", "resource_url: " + resource_url);
 
+        String cacheExpiredDate = versionTable.getCacheControlValue(update_key);
         String prevLastModified = versionTable.getVersionValue(update_key);
-        boolean isDefaultValue = prevLastModified.equals(versionTable.getDefaultValue());
-        if (!file.exists() || isDefaultValue) prevLastModified = null;
 
-        JsonObject result = downloadResource(
-                resourceClient, resource_url, file, prevLastModified);
+        int isCacheExpired = checkCacheExpired(cacheExpiredDate);
+        boolean isDefaultValue = prevLastModified.equals(versionTable.getDefaultValue())
+                || cacheExpiredDate.equals(versionTable.getDefaultValue());
+        if (!file.exists() || isDefaultValue || isCacheExpired == -1) prevLastModified = null;
 
-        if (result.has("response_code")) {
-            int response_code = result.get("response_code").getAsInt();
-            if (response_code == 200) {
-                String last_modified = result.get("last_modified").getAsString();
-                versionTable.putVersionValue(update_key, last_modified);
-                Log.e("GOTO-D", update_key + " last_modified: " + last_modified);
-            } else if (response_code == 304) {
-                Log.e("GOTO-D", update_key + " use cached resource (304)");
+        if (prevLastModified == null || isCacheExpired == 1) {
+            JsonObject result = downloadResource(
+                    resourceClient, resource_url, file, prevLastModified);
+
+            if (result.has("response_code")) {
+                int response_code = result.get("response_code").getAsInt();
+                if (response_code == 200) {
+                    String cache_expired = getCacheExpiredAt(result.get("cache_control").getAsString());
+                    String last_modified = result.get("last_modified").getAsString();
+                    versionTable.putCacheAndVersion(update_key, last_modified, cache_expired);
+                    Log.e("GOTO-D", update_key + " last_modified: " + last_modified);
+                    Log.e("GOTO-D", update_key + " cache_expired: " + cache_expired);
+                } else if (response_code == 304) {
+                    Log.e("GOTO-D", update_key + " use cached resource (304)");
+                } else {
+                    Log.e("GOTO-D", update_key + " response_code: " + response_code);
+                }
             } else {
-                Log.e("GOTO-D", update_key + " response_code: " + response_code);
+                Log.e("GOTO-D", "download error: " + update_key);
             }
         } else {
-            Log.e("GOTO", "download error: " + update_key);
+            Log.e("GOTO-D", "using cache: " + update_key + " " + cacheExpiredDate);
         }
 
         InputStream is = new BufferedInputStream(new FileInputStream(file));

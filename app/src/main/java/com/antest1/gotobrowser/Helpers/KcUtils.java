@@ -299,6 +299,19 @@ public class KcUtils {
         return downloadResult;
     }
 
+    public static Long extractMaxAge(String header) {
+        if (header == null || header.isEmpty()) return null;
+
+        // Regex looks for "max-age=" followed by one or more digits
+        Pattern pattern = Pattern.compile("max-age=(\\d+)");
+        Matcher matcher = pattern.matcher(header);
+
+        if (matcher.find()) {
+            return Long.parseLong(matcher.group(1));
+        }
+        return null;
+    }
+
     public static Retrofit getRetrofitAdapter(Context context, String baseUrl) {
         OkHttpClient.Builder builder = new OkHttpClient().newBuilder();
         builder.cache(new Cache(context.getCacheDir(), CACHE_SIZE_BYTES));

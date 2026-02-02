@@ -10,6 +10,8 @@ import android.util.Log;
 public class VersionDatabase extends SQLiteOpenHelper {
     private static final String db_name = "gotobrowser_db";
     private static final String table_name = "version_table";
+    private static final String DB_CACHE_PREFIX = "[C]";
+    private static final String DB_DEFAULT_VALUE = "_none_";
 
     public VersionDatabase(Context context, SQLiteDatabase.CursorFactory factory, int version) {
         super(context, db_name, factory, version);
@@ -34,14 +36,10 @@ public class VersionDatabase extends SQLiteOpenHelper {
         db.execSQL("delete from " + table_name);
     }
 
-    public static boolean isDefaultValue(String text) {
-        return "_none_".equals(text);
-    }
-
     // for kca_userdata
     public String getValue(String key, String prefix) {
         String prefix_key = prefix + key;
-        String value = "_none_";
+        String value = DB_DEFAULT_VALUE;
         SQLiteDatabase db = this.getReadableDatabase();
         Cursor c = db.query(
             table_name, null, "KEY=?", new String[]{prefix_key},
@@ -65,6 +63,10 @@ public class VersionDatabase extends SQLiteOpenHelper {
         return getValue(key, "");
     }
 
+    public String getCacheControlValue(String key) {
+        return getValue(key, DB_CACHE_PREFIX);
+    }
+
     public void putValue(String key, String value, String prefix) {
         String prefix_key = prefix + key;
         SQLiteDatabase db = this.getWritableDatabase();
@@ -81,12 +83,17 @@ public class VersionDatabase extends SQLiteOpenHelper {
         putValue(key, value, "");
     }
 
-    public String getDefaultValue() {
-        return "_none_";
+    public void putCacheControlValue(String key, String value) {
+        putValue(key, value, DB_CACHE_PREFIX);
     }
 
-    public void putDefaultVersionValue(String key) {
-        putVersionValue(key, getDefaultValue());
+    public void putCacheAndVersion(String key, String last_modified, String cache_control) {
+        putVersionValue(key, last_modified);
+        putCacheControlValue(key, cache_control);
+    }
+
+    public String getDefaultValue() {
+        return DB_DEFAULT_VALUE;
     }
 
 }
