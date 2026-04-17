@@ -79,11 +79,11 @@
     <string name="settings_mod_kantai3d_enable">Kantai3D v4.0</string>
     <string name="settings_mod_kantai3d_summary">一部の秘書艦に3Dのような視覚効果とおける乳揺れを追加します。作者：@laplamgor</string>
     <string name="settings_mod_kantai3d_about">About Kantai3D</string>
-    <string name="settings_mod_kantaien_enable">[Beta] KanColle English Patch</string>
+    <string name="settings_mod_kantaien_enable">KanColle English Patch</string>
     <string name="settings_mod_kantaien_summary">ゲームを英語に翻訳する。作者：@Oradimi</string>
-    <string name="settings_mod_kantaien_download">English Patchデータダウンロード</string>
+    <string name="settings_mod_kantaien_download">Patchデータダウンロード</string>
     <string name="settings_mod_kantaien_download_start">ダウンロード中… アプリケーションをバックグラウンドにしたままにしておくことができます。</string>
-    <string name="settings_mod_kantaien_delete">English Patchデータ削除</string>
+    <string name="settings_mod_kantaien_delete">Patchデータ削除</string>
     <string name="settings_mod_kantaien_delete_summary">パッチが予期しない動作を示している場合、またはダウンロード中に問題が発生した場合は、この設定を使用します。</string>
     <string name="settings_mod_kantaien_about">KanColle English Patchについて</string>
     <string name="settings_mod_fps_enable">60FPS制限を削除します</string>
@@ -101,8 +101,8 @@
     <string name="en_unzip_start">解凍中…お待ちください…</string>
     <string name="en_unzip_done">パッチ解凍完了！</string>
     <string name="en_update_done">パッチアップデート完了！</string>
-    <string name="en_install_done_notification">英語化パッチ搭載！ ゲームを再起動してください。</string>
-    <string name="en_update_done_notification">英語化パッチ更新！ ゲームを再起動してください。</string>
+    <string name="en_install_done_notification">パッチ搭載！ ゲームを再起動してください。</string>
+    <string name="en_update_done_notification">パッチ更新！ ゲームを再起動してください。</string>
 
     <string name="browser_ui_hint_text">« 外側をクリックしてパネルを開く »</string>
     <string name="settings_retry_enable">ゲームアセットのダウンロードの再試行</string>

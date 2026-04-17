@@ -47,6 +47,7 @@ import java.nio.charset.StandardCharsets;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.Date;
@@ -236,7 +237,7 @@ public class ResourceProcess {
                     if (is_audio) return processAudioFile(file_info, resource_type);
                     if (is_css) return processStylesheet(file_info);
                     if (is_font) {
-                        if (sharedPref.getBoolean(PREF_FONT_PREFETCH, true)) {
+                        if (sharedPref.getBoolean(PREF_FONT_PREFETCH, true) && !KenPatcher.isPatcherEnabled()) {
                             return getFontFile(filename);
                         } else {
                             return processFontFile(file_info);
@@ -417,9 +418,9 @@ public class ResourceProcess {
         }
 
         if (KenPatcher.isPatcherEnabled()) {
-            String patchedFilePath = KcUtils.getAppCacheFileDir(context, "/_patched_cache".concat(path));
+            String patchedFilePath = KcUtils.getAppCacheFileDir(context, KcEnUtils.getPatchedCachePath().concat(path));
             String patchFilePath = KcUtils.getAppCacheFileDir(context,
-                    "/KanColle-English-Patch-KCCP-master/EN-patch".concat(path));
+                    ("/" + KcEnUtils.getAssetPath()).concat(path));
             File patchedFile = getImageFile(patchedFilePath);
             File patchFile = new File(patchFilePath);
 
@@ -654,6 +655,7 @@ public class ResourceProcess {
         }
 
         try {
+            file = applyKenPatcherIfAvailable(path, file, false);
             InputStream is = new BufferedInputStream(new FileInputStream(file));
             return new WebResourceResponse("audio/mpeg", "binary", is);
         } catch (IOException e) {
@@ -664,6 +666,7 @@ public class ResourceProcess {
     }
 
     private WebResourceResponse processFontFile(JsonObject file_info) throws IOException {
+        String path = file_info.get("path").getAsString();
         String update_key = file_info.get("key").getAsString();
         String resource_url = file_info.get("full_url").getAsString();
         String out_file_path = file_info.get("out_file_path").getAsString();
@@ -703,6 +706,7 @@ public class ResourceProcess {
             Log.e("GOTO-D", "using cache: " + update_key + " " + cacheExpiredDate);
         }
 
+        file = applyKenPatcherIfAvailable(path, file, false);
         InputStream is = new BufferedInputStream(new FileInputStream(file));
         return new WebResourceResponse("application/font-woff2", "binary", is);
     }
@@ -942,6 +946,84 @@ public class ResourceProcess {
         }
     }
 
+    private File applyKenPatcherIfAvailable(String path, File originalFile, boolean updateFlag) {
+        if (!KenPatcher.isPatcherEnabled()) return originalFile;
+
+        String patchedFilePath = KcUtils.getAppCacheFileDir(context, KcEnUtils.getPatchedCachePath().concat(path));
+        String patchFilePath = KcUtils.getAppCacheFileDir(context,
+                ("/" + KcEnUtils.getAssetPath()).concat(path));
+
+        File patchedFile = new File(patchedFilePath);
+        File patchFile = new File(patchFilePath);
+
+        if (!patchFile.exists()) return originalFile;
+
+        boolean usePatchedCache = false;
+
+        String patchStrings;
+        if (patchFile.isDirectory()) {
+            if (new File(patchFilePath + "/original").isDirectory()) {
+                patchStrings = dirMD5(patchFilePath + "/original") + dirMD5(patchFilePath + "/patched");
+            } else {
+                patchStrings = dirMD5(patchFilePath);
+            }
+        } else {
+            patchStrings = patchFilePath + "_" + patchFile.length() + "_" + patchFile.lastModified();
+        }
+
+        String hash = GetMD5HashOfString(patchStrings);
+        String patchVersion = versionTable.getVersionValue(patchFilePath);
+
+        if (!patchedFile.exists() || updateFlag || patchVersion == null ||
+                !Objects.equals(patchVersion, hash)) {
+
+            versionTable.putVersionValue(patchFilePath, hash);
+            Log.e("GOTO", "needs repatch: " + patchedFilePath + " " + hash);
+
+            try {
+                patchedFile.getParentFile().mkdirs();
+
+                if (patchFile.isFile()) {
+                    KcUtils.copyFileUsingStream(patchFile, patchedFile);
+                    usePatchedCache = true;
+                }
+                else {
+                    String ext = "";
+                    String name = originalFile.getName();
+                    int dot = name.lastIndexOf('.');
+                    if (dot != -1) ext = name.substring(dot);
+
+                    File originalPatch = new File(patchFilePath + "/original" + ext);
+                    File patchedPatch = new File(patchFilePath + "/patched" + ext);
+
+                    if (originalPatch.exists() && patchedPatch.exists()) {
+
+                        byte[] originalBytes = KcUtils.getBytesFromInputStream(new FileInputStream(originalFile));
+                        byte[] patchOriginalBytes = KcUtils.getBytesFromInputStream(new FileInputStream(originalPatch));
+
+                        if (Arrays.equals(originalBytes, patchOriginalBytes)) {
+                            KcUtils.copyFileUsingStream(patchedPatch, patchedFile);
+                            Log.e("GOTO", "patched via original/patched match: " + path);
+                            usePatchedCache = true;
+                        } else {
+                            Log.e("GOTO", "original mismatch, skipping patch: " + path);
+                        }
+                    }
+                }
+
+            } catch (IOException e) {
+                e.printStackTrace();
+                return originalFile;
+            }
+
+        } else {
+            Log.e("GOTO", "using cached patched file: " + patchedFilePath + " " + hash);
+            usePatchedCache = true;
+        }
+
+        return usePatchedCache ? patchedFile : originalFile;
+    }
+
     public static boolean patchImage(String ogDestination, String ptDestination, String patchFile) {
         if (ResourceProcess.isImage(ResourceProcess.getCurrentState(ptDestination))) {
             Bitmap ogSpritesheet = BitmapFactory.decodeFile(ogDestination);
@@ -951,7 +1033,7 @@ public class ResourceProcess {
             Log.e("GOTO-F", "patchImage-desc: " + metadataFile.getAbsolutePath());
             if (!metadataFile.exists()) {
                 Bitmap ogImage = BitmapFactory.decodeFile(patchFile.concat("/original.png"));
-                if (ogSpritesheet != null && ogImage != null && KcEnUtils.bitmapEqual(ogSpritesheet, ogImage)) {
+                if (ogSpritesheet != null && ogImage != null && KcEnUtils.bitmapEqual(ogSpritesheet, ogImage, 0.01f)) {
                     File source = new File(patchFile.concat("/patched.png"));
                     try {
                         dest.getParentFile().mkdirs();
@@ -1041,7 +1123,7 @@ public class ResourceProcess {
             ogSpritesheet.getPixels(spritesheetPixels, 0, w, frameX, frameY, w, h);
             spritesheetSprite.setPixels(spritesheetPixels, 0, w, 0, 0, w, h);
 
-            if (w == ogSpriteWidth && h == ogSpriteHeight && KcEnUtils.bitmapEqual(ogSprite, spritesheetSprite)) {
+            if (w == ogSpriteWidth && h == ogSpriteHeight && KcEnUtils.bitmapEqual(ogSprite, spritesheetSprite, 0.01f)) {
                 return patchSprite(ptSpritesheet, ptSprite, w, h, frameX, frameY, ptPixels);
             }
         }

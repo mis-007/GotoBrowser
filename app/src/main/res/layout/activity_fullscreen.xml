@@ -75,48 +75,49 @@
         </LinearLayout>
 
         <LinearLayout
-        android:gravity="bottom"
-        android:id="@+id/ui_hint_layout"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:layout_x="-1dp"
-        android:layout_y="0dp"
-        android:background="#A8000000">
-
-        <LinearLayout
+            android:id="@+id/ui_hint_layout"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_gravity="bottom"
-            android:orientation="horizontal">
+            android:layout_height="match_parent"
+            android:layout_x="-1dp"
+            android:layout_y="0dp"
+            android:background="#A8000000"
+            android:gravity="bottom"
+            android:orientation="vertical">
 
-            <TextView
-                android:id="@+id/ui_hint_text"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_margin="8dp"
-                android:layout_weight="1"
-                android:gravity="fill"
-                android:minLines="2"
-                android:text="@string/browser_ui_hint_text"
-                android:textAlignment="center"
-                android:textColor="@color/white"
-                android:textSize="18dp"
-                app:layout_constraintEnd_toEndOf="@id/main_browser"
-                app:layout_constraintStart_toStartOf="@id/main_browser"
-                app:layout_constraintTop_toTopOf="@id/main_browser" />
-
-            <ImageView
-                android:id="@+id/ui_hint_close"
+            <LinearLayout
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_margin="8dp"
-                android:src="@android:drawable/ic_menu_close_clear_cancel"
-                android:visibility="visible"
-                app:layout_constraintEnd_toEndOf="@id/main_browser"
-                app:layout_constraintTop_toTopOf="@id/main_browser"
-                app:srcCompat="@android:drawable/ic_menu_close_clear_cancel" />
+                android:layout_gravity="bottom|center"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/ui_hint_text"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_margin="8dp"
+                    android:layout_weight="1"
+                    android:gravity="fill"
+                    android:minLines="2"
+                    android:text="@string/browser_ui_hint_text"
+                    android:textAlignment="center"
+                    android:textColor="@color/white"
+                    android:textSize="18dp"
+                    app:layout_constraintEnd_toEndOf="@id/main_browser"
+                    app:layout_constraintStart_toStartOf="@id/main_browser"
+                    app:layout_constraintTop_toTopOf="@id/main_browser" />
+
+                <ImageView
+                    android:id="@+id/ui_hint_close"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_margin="8dp"
+                    android:src="@android:drawable/ic_menu_close_clear_cancel"
+                    android:visibility="visible"
+                    app:layout_constraintEnd_toEndOf="@id/main_browser"
+                    app:layout_constraintTop_toTopOf="@id/main_browser"
+                    app:srcCompat="@android:drawable/ic_menu_close_clear_cancel" />
+            </LinearLayout>
         </LinearLayout>
-    </LinearLayout>
 
     <View
         android:id="@+id/screenshot_light"

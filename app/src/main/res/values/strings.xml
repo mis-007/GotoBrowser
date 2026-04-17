@@ -88,13 +88,16 @@
     <string name="settings_mod_kantai3d_enable">Kantai3D v4.0</string>
     <string name="settings_mod_kantai3d_summary">Add 3D-like visual effects and jiggle physics to some of your secretaries. Author: @laplamgor</string>
     <string name="settings_mod_kantai3d_about">About Kantai3D</string>
-    <string name="settings_mod_kantaien_enable">[Beta] KanColle English Patch</string>
+    <string name="settings_mod_kantaien_enable">KanColle English Patch</string>
     <string name="settings_mod_kantaien_summary">Translates most of the game into English. Author: @Oradimi</string>
-    <string name="settings_mod_kantaien_download">Download English Patch Data</string>
+    <string name="settings_mod_kantaiid_enable">KanColle Indonesia Patch</string>
+    <string name="settings_mod_kantaiid_summary">Translates most of the game into Indonesian. Author: @SLAVUSworks</string>
+    <string name="settings_mod_kantaien_download">Download Patch Data</string>
     <string name="settings_mod_kantaien_download_start">Downloading… You can leave the application in the background while downloading.</string>
-    <string name="settings_mod_kantaien_delete">Delete English Patch Data</string>
-    <string name="settings_mod_kantaien_delete_summary">Use this setting if the patch is presenting unexpected behaviours, or if something went wrong during the download.</string>
+    <string name="settings_mod_kantaien_delete">Delete Patch Data</string>
+    <string name="settings_mod_kantaien_delete_summary">Use this setting if the patch is presenting unexpected behaviour, or if something went wrong during download.</string>
     <string name="settings_mod_kantaien_about">About KanColle English Patch</string>
+    <string name="settings_mod_kantaiid_about">About KanColle Indonesia Patch</string>
     <string name="settings_mod_fps_enable">Remove 60 FPS limit</string>
     <string name="settings_mod_fps_summary">Support higher refresh rate devices. Animation speed is not affected.</string>
     <string name="settings_mod_crit_enable">True Critical Hits</string>
@@ -110,8 +113,8 @@
     <string name="en_unzip_start">Unzipping… Please wait…</string>
     <string name="en_unzip_done">Patch unzip complete!</string>
     <string name="en_update_done">Patch update complete!</string>
-    <string name="en_install_done_notification">English Patch installed! Please restart the game.</string>
-    <string name="en_update_done_notification">English Patch updated! Please restart the game.</string>
+    <string name="en_install_done_notification">Patch installed! Please restart the game.</string>
+    <string name="en_update_done_notification">Patch updated! Please restart the game.</string>
 
     <string name="browser_ui_hint_text">« click any outside area to open the panel »</string>
 
