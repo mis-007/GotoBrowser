@@ -29,7 +29,6 @@ import com.antest1.gotobrowser.BuildConfig;
 import com.antest1.gotobrowser.Helpers.GotoVersionCheck;
 import com.antest1.gotobrowser.Helpers.KcEnUtils;
 import com.antest1.gotobrowser.Helpers.KcUtils;
-import com.antest1.gotobrowser.Helpers.KenPatcher;
 import com.antest1.gotobrowser.Helpers.VersionDatabase;
 import com.antest1.gotobrowser.Preference.MaterialListPreference;
 import com.antest1.gotobrowser.R;
@@ -69,7 +68,6 @@ import static com.antest1.gotobrowser.Constants.PREF_MOD_KANTAIEN_DELETE;
 import static com.antest1.gotobrowser.Constants.PREF_MOD_KANTAIEN_UPDATE;
 import static com.antest1.gotobrowser.Constants.PREF_MOD_CRIT;
 import static com.antest1.gotobrowser.Constants.PREF_MOD_KANTAI3D;
-import static com.antest1.gotobrowser.Constants.PREF_MOD_KANTAIID;
 import static com.antest1.gotobrowser.Constants.PREF_MOD_KCCP_LANG_PATCH_EN;
 import static com.antest1.gotobrowser.Constants.PREF_MOD_KCCP_LANG_PATCH_GITHUB;
 import static com.antest1.gotobrowser.Constants.PREF_MOD_KCCP_LANG_PATCH_ID;
@@ -122,7 +120,6 @@ public class SettingsActivity extends AppCompatActivity {
                 case PREF_DEVTOOLS_DEBUG:
                 case PREF_TP_DISCLAIMED:
                 case PREF_MOD_KANTAI3D:
-                case PREF_MOD_KANTAIID:
                 case PREF_MOD_FPS:
                 case PREF_MOD_CRIT:
                 case PREF_LEGACY_RENDERER:
@@ -223,7 +220,7 @@ public class SettingsActivity extends AppCompatActivity {
                 version_pref.setSummary(BuildConfig.VERSION_NAME);
             }
             updateSubtitleDescriptionText();
-            updateKCCPLangPatchDescriptionText();
+            updateKCCPLangPatchDescriptionText(null);
             updateKCCPLangPatchInfo(null);
             updateKantai3dDisable();
         }
@@ -244,7 +241,7 @@ public class SettingsActivity extends AppCompatActivity {
                             enUtils.requestPatchUpdate(this);
                         }
                     } catch (IOException e) {
-                        e.printStackTrace();
+                        Log.e("GOTO", KcUtils.getStringFromException(e));
                     }
                     break;
                 case PREF_MOD_KANTAIEN_DELETE:
@@ -303,6 +300,7 @@ public class SettingsActivity extends AppCompatActivity {
 
                 if (key.equals(PREF_MOD_KCCP_LANG_PATCH_NAME)) {
                     updateKCCPLangPatchInfo(stringValue);
+                    updateKCCPLangPatchDescriptionText(stringValue);
                 }
             }
             else if (preference instanceof EditTextPreference) {
@@ -324,7 +322,7 @@ public class SettingsActivity extends AppCompatActivity {
                 }
 
                 if (key.equals(PREF_MOD_KCCP_LANG_PATCH)) {
-                    updateKCCPLangPatchDescriptionText();
+                    updateKCCPLangPatchDescriptionText(null);
                 }
             }
             return true;
@@ -376,13 +374,14 @@ public class SettingsActivity extends AppCompatActivity {
             modKCCPLangPatchInfo.setSummary(target_url);
         }
 
-        private void updateKCCPLangPatchDescriptionText() {
+        private void updateKCCPLangPatchDescriptionText(String lang) {
             ListPreference modKCCPLangPatchName = findPreference(PREF_MOD_KCCP_LANG_PATCH_NAME);
             Preference modKCCPLangPatchUpdate = findPreference(PREF_MOD_KANTAIEN_UPDATE);
             if (modKCCPLangPatchName == null || modKCCPLangPatchUpdate == null) return;
+            if (lang == null) lang = modKCCPLangPatchName.getValue();
 
-            if (sharedPref.getBoolean(PREF_MOD_KCCP_LANG_PATCH, false) ||
-                    sharedPref.getBoolean(PREF_MOD_KANTAIID, false)) {
+            if (sharedPref.getBoolean(PREF_MOD_KCCP_LANG_PATCH, false)) {
+                enUtils.setPatchLanguage(lang);
                 enUtils.checkKantaiEnUpdate(this, modKCCPLangPatchUpdate);
             } else {
                 modKCCPLangPatchUpdate.setSummary("Mod disabled.");

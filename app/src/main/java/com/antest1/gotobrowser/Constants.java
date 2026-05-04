@@ -43,7 +43,6 @@ public class Constants {
     public static final String PREF_MOD_KCCP_LANG_PATCH_ID = "kccp_lang_id";
 
     public static final String PREF_MOD_KANTAIEN_LEGACY = "pref_mod_kantaien";
-    public static final String PREF_MOD_KANTAIID = "pref_mod_kantaiid";
     public static final String PREF_MOD_KANTAIEN_UPDATE = "pref_mod_kantaien_update";
     public static final String PREF_MOD_KANTAIEN_DELETE = "pref_mod_kantaien_delete";
     public static final String PREF_MOD_FPS = "pref_mod_fps";
