@@ -8,7 +8,6 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.view.View;
 import android.webkit.WebView;
-import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.TextView;
 
@@ -53,7 +52,7 @@ import static com.antest1.gotobrowser.Constants.PREF_DMM_PASS;
 import static com.antest1.gotobrowser.Constants.PREF_KEYBOARD;
 import static com.antest1.gotobrowser.Constants.PREF_LATEST_URL;
 import static com.antest1.gotobrowser.Constants.PREF_BROADCAST;
-import static com.antest1.gotobrowser.Constants.PREF_MOD_KANTAIEN;
+import static com.antest1.gotobrowser.Constants.PREF_MOD_KCCP_LANG_PATCH;
 import static com.antest1.gotobrowser.Constants.PREF_PANELSTART;
 import static com.antest1.gotobrowser.Constants.PREF_SILENT;
 import static com.antest1.gotobrowser.Constants.PREF_TP_DISCLAIMED;
@@ -155,7 +154,7 @@ public class EntranceActivity extends AppCompatActivity {
         }
 
         KcEnUtils enUtils = new KcEnUtils();
-        if (sharedPref.getBoolean(PREF_MOD_KANTAIEN, false)) {
+        if (sharedPref.getBoolean(PREF_MOD_KCCP_LANG_PATCH, false)) {
             String availableVersion = enUtils.checkKantaiEnUpdateEntrance(this);
             if (availableVersion != null) {
                 MaterialAlertDialogBuilder alertDialogBuilder = new MaterialAlertDialogBuilder(this);

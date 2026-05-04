@@ -160,48 +160,41 @@
             app:title="@string/settings_mod_crit_enable" />
 
         <SwitchPreferenceCompat
-            android:summary="@string/settings_mod_kantaien_summary"
+            android:summary="@string/settings_mod_kccp_summary"
             app:iconSpaceReserved="false"
-            app:key="pref_mod_kantaien"
-            app:title="@string/settings_mod_kantaien_enable" />
+            app:key="pref_mod_kccp_lang_patch"
+            app:title="@string/settings_mod_kccp" />
+
+        <ListPreference
+            android:dependency="pref_mod_kccp_lang_patch"
+            app:iconSpaceReserved="false"
+            app:defaultValue="kccp_lang_en"
+            app:key="pref_mod_kccp_lang_patch_name"
+            app:title="@string/settings_mod_kccp_patch_name"
+            app:entries="@array/kccp_language"
+            app:entryValues="@array/kccp_language_values" />
 
         <Preference
-            app:iconSpaceReserved="false"
-            app:key="pref_github_kccp"
-            app:title="@string/settings_mod_kantaien_about"
-            app:summary="https://github.com/Oradimi/KanColle-English-Patch-KCCP">
-            <intent
-                android:action="android.intent.action.VIEW"
-                android:data="https://github.com/Oradimi/KanColle-English-Patch-KCCP"/>
-        </Preference>
-
-        <SwitchPreferenceCompat
-            android:summary="@string/settings_mod_kantaiid_summary"
-            app:iconSpaceReserved="false"
-            app:key="pref_mod_kantaiid"
-            app:title="@string/settings_mod_kantaiid_enable" />
-
-        <Preference
-            app:iconSpaceReserved="false"
-            app:key="pref_github_kccp_id"
-            app:title="@string/settings_mod_kantaiid_about"
-            app:summary="https://github.com/SLAVUSworks/KanColle-Indonesia-Patch-KCCP">
-            <intent
-                android:action="android.intent.action.VIEW"
-                android:data="https://github.com/SLAVUSworks/KanColle-Indonesia-Patch-KCCP"/>
-        </Preference>
-
-        <Preference
+            android:dependency="pref_mod_kccp_lang_patch"
             app:iconSpaceReserved="false"
             app:key="pref_mod_kantaien_update"
             app:title="@string/settings_mod_kantaien_download"
             app:summary="checking updates..." />
 
         <Preference
+            android:dependency="pref_mod_kccp_lang_patch"
             app:iconSpaceReserved="false"
             app:key="pref_mod_kantaien_delete"
             app:title="@string/settings_mod_kantaien_delete"
             app:summary="@string/settings_mod_kantaien_delete_summary" />
+
+        <Preference
+            android:layout_width="wrap_content"
+            android:dependency="pref_mod_kccp_lang_patch"
+            app:iconSpaceReserved="false"
+            app:key="pref_github_kccp"
+            app:summary="@string/settings_mod_kccp_patch_en_link"
+            app:title="@string/settings_mod_kantaien_about"></Preference>
 
     </PreferenceCategory>
 

@@ -79,12 +79,19 @@
     <string name="settings_mod_kantai3d_summary">为部份秘书舰添加仿立体以及乳摇视觉效果。作者：@laplamgor</string>
     <string name="settings_mod_kantai3d_about">关于Kantai3D</string>
     <string name="settings_mod_kantaien_enable">KanColle English Patch</string>
-    <string name="settings_mod_kantaien_summary">将游戏界面翻译成英文。作者：@Oradimi</string>
-    <string name="settings_mod_kantaien_download">下载Patch资料</string>
+    <string name="settings_mod_kantaien_download">下载补丁资料</string>
     <string name="settings_mod_kantaien_download_start">正在下载… 您可以在下载时将应用程式留在背景。</string>
-    <string name="settings_mod_kantaien_delete">删除Patch资料</string>
+    <string name="settings_mod_kantaien_delete">删除补丁资料</string>
     <string name="settings_mod_kantaien_delete_summary">如果修补程式出现预期外行为，或者在下载过程中出现问题，请使用此设定。</string>
     <string name="settings_mod_kantaien_about">KanColle English Patch关于</string>
+    <string name="settings_mod_kantaiid_about">KanColle Indonesia Patch关于</string>
+
+    <string name="settings_mod_kccp">KanColle Language Patch (KCCP)</string>
+    <string name="settings_mod_kccp_summary">将游戏界面翻译成其他语言</string>
+    <string name="settings_mod_kccp_patch_name">要使用的补丁</string>
+    <string name="settings_mod_kccp_patch_en_summary">KanColle English Patch (作者: @Oradimi)</string>
+    <string name="settings_mod_kccp_patch_id_summary">KanColle Indonesia Patch (作者: @SLAVUSworks)</string>
+
     <string name="settings_mod_fps_enable">移除60帧限制</string>
     <string name="settings_mod_fps_summary">支援高萤幕更新率手机，不会影响游戏动画速度。</string>
     <string name="settings_mod_crit_enable">真正的Critical hit</string>
