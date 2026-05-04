@@ -167,6 +167,32 @@
 
         <Preference
             app:iconSpaceReserved="false"
+            app:key="pref_github_kccp"
+            app:title="@string/settings_mod_kantaien_about"
+            app:summary="https://github.com/Oradimi/KanColle-English-Patch-KCCP">
+            <intent
+                android:action="android.intent.action.VIEW"
+                android:data="https://github.com/Oradimi/KanColle-English-Patch-KCCP"/>
+        </Preference>
+
+        <SwitchPreferenceCompat
+            android:summary="@string/settings_mod_kantaiid_summary"
+            app:iconSpaceReserved="false"
+            app:key="pref_mod_kantaiid"
+            app:title="@string/settings_mod_kantaiid_enable" />
+
+        <Preference
+            app:iconSpaceReserved="false"
+            app:key="pref_github_kccp_id"
+            app:title="@string/settings_mod_kantaiid_about"
+            app:summary="https://github.com/SLAVUSworks/KanColle-Indonesia-Patch-KCCP">
+            <intent
+                android:action="android.intent.action.VIEW"
+                android:data="https://github.com/SLAVUSworks/KanColle-Indonesia-Patch-KCCP"/>
+        </Preference>
+
+        <Preference
+            app:iconSpaceReserved="false"
             app:key="pref_mod_kantaien_update"
             app:title="@string/settings_mod_kantaien_download"
             app:summary="checking updates..." />
@@ -176,16 +202,6 @@
             app:key="pref_mod_kantaien_delete"
             app:title="@string/settings_mod_kantaien_delete"
             app:summary="@string/settings_mod_kantaien_delete_summary" />
-
-        <Preference
-            app:iconSpaceReserved="false"
-            app:key="pref_github_kccp"
-            app:title="@string/settings_mod_kantaien_about"
-            app:summary="https://github.com/Oradimi/KanColle-English-Patch-KCCP">
-            <intent
-                android:action="android.intent.action.VIEW"
-                android:data="https://github.com/Oradimi/KanColle-English-Patch-KCCP"/>
-        </Preference>
 
     </PreferenceCategory>
 

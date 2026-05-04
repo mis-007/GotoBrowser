@@ -13,6 +13,7 @@ import com.google.gson.JsonParser;
 import com.google.gson.JsonSyntaxException;
 
 import static com.antest1.gotobrowser.Constants.PREF_MOD_KANTAIEN;
+import static com.antest1.gotobrowser.Constants.PREF_MOD_KANTAIID;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -23,10 +24,24 @@ import java.util.Map;
 
 public class KenPatcher {
 
-    private static boolean isPatcherEnabled = false;
+    public enum PatchLanguage {
+        NONE,
+        EN,
+        ID,
+    }
+
+    private static PatchLanguage patchLanguage = PatchLanguage.NONE;
 
     public static boolean isPatcherEnabled() {
-        return isPatcherEnabled;
+        return patchLanguage != PatchLanguage.NONE;
+    }
+
+    public static PatchLanguage getPatchLanguage() {
+        return patchLanguage;
+    }
+
+    public static void setPatchLanguage(PatchLanguage language) {
+        patchLanguage = language;
     }
 
     public void prepare(Activity activity) {
@@ -34,11 +49,13 @@ public class KenPatcher {
         // Require reopening the browser after switching the MOD on or off
         SharedPreferences sharedPref = activity.getSharedPreferences(
                 activity.getString(R.string.preference_key), Context.MODE_PRIVATE);
-        isPatcherEnabled = sharedPref.getBoolean(PREF_MOD_KANTAIEN, false);
+        patchLanguage = sharedPref.getBoolean(PREF_MOD_KANTAIEN, false) ? PatchLanguage.EN :
+                sharedPref.getBoolean(PREF_MOD_KANTAIID, false) ? PatchLanguage.ID :
+                        PatchLanguage.NONE;
     }
 
     public static String patchKantaiEn(String main_js, Activity activity) {
-        if (!isPatcherEnabled) {
+        if (!isPatcherEnabled()) {
             return main_js;
         }
 
@@ -47,7 +64,11 @@ public class KenPatcher {
 
         JsonObject translations = new JsonObject();
         StringBuilder regex = new StringBuilder("[");
-        String rawText = "KanColle-English-Patch-KCCP-master/EN-patch/kcs2/js/main.js/ignore-raw_text_translations";
+        String rawText = KcEnUtils.getAssetPath() + "/kcs2/js/main.js/ignore-raw_text_translations";
+        String patcherPath = activity.getExternalFilesDir(null).getAbsolutePath()
+                + "/" + KcEnUtils.getAssetPath() + "/kcs2/js/main.js/ignore-patcher_contents.js";
+
+        String patcherContents = loadExternalText(patcherPath);
 
         listExternalFiles(rawText, translationFiles, activity);
         listExternalFiles(rawText + "_regex", regexFiles, activity);
@@ -86,26 +107,106 @@ public class KenPatcher {
         }
         regex.append("]");
 
+        if (patcherContents == null || patcherContents.length() < 50) {
+            Log.e("GOTO", "Failed to load patcher file or invalid patcher");
+            // return fallback behaviour
+            return main_js + ";\n" +
+                    "var KCT_TLS = " + translations + ";\n" +
+                    "var KCT_REPLACEMENTS = " + regex + ";\n\n" +
+
+                    "(function () {\n" +
+                    "    const origText = Object.getOwnPropertyDescriptor(PIXI.Text.prototype, \"text\");\n" +
+                    "    const origStyle = Object.getOwnPropertyDescriptor(PIXI.Text.prototype, \"style\");\n\n" +
+
+                    "    function parseTags(text) {\n" +
+                    "        let hasTags = false;\n" +
+                    "        let scale = 1, color = null, weight = null, line = null, leading = null;\n" +
+                    "        if (text && text.charCodeAt(0) === 60) {\n" +
+                    "            let i = 0;\n" +
+                    "            while (text.charCodeAt(i) === 60) {\n" +
+                    "                const end = text.indexOf('>', i);\n" +
+                    "                if (end === -1) break;\n" +
+                    "                hasTags = true;\n" +
+                    "                const tag = text.slice(i + 1, end);\n" +
+                    "                switch (tag[0]) {\n" +
+                    "                    case 's': scale = parseFloat(tag.slice(1)) || 1; break;\n" +
+                    "                    case 'c': color = tag.slice(1); break;\n" +
+                    "                    case 'w': weight = tag.slice(1); break;\n" +
+                    "                    case 'n': line = parseFloat(tag.slice(1)); break;\n" +
+                    "                    case 'l': leading = parseFloat(tag.slice(1)); break;\n" +
+                    "                }\n" +
+                    "                i = end + 1;\n" +
+                    "            }\n" +
+                    "            text = text.slice(i);\n" +
+                    "        }\n" +
+                    "        return { text, hasTags, scale, color, weight, line, leading };\n" +
+                    "    }\n\n" +
+
+                    "    const compiledRegex = KCT_REPLACEMENTS.map(function(pair) {\n" +
+                    "        return [new RegExp(pair[0], \"gm\"), pair[1]];\n" +
+                    "    });\n\n" +
+
+                    "    Object.defineProperty(PIXI.Text.prototype, \"text\", {\n" +
+                    "        get: origText.get,\n" +
+                    "        set: function(text) {\n" +
+                    "            const replaced = KCT_TLS[text];\n" +
+                    "            if (replaced !== undefined) {\n" +
+                    "                text = replaced;\n" +
+                    "            } else if (text != null) {\n" +
+                    "                for (var i = 0; i < compiledRegex.length; i++) {\n" +
+                    "                    text = text.replace(compiledRegex[i][0], compiledRegex[i][1]);\n" +
+                    "                }\n" +
+                    "            }\n\n" +
+
+                    "            text = String(text == null ? ' ' : text);\n" +
+                    "            const parsed = parseTags(text);\n\n" +
+
+                    "            if (!this._kctBaseStyle && this.style) {\n" +
+                    "                this._kctBaseStyle = new PIXI.TextStyle(this.style);\n" +
+                    "            }\n\n" +
+
+                    "            if (!parsed.hasTags) {\n" +
+                    "                if (this._kctBaseStyle) {\n" +
+                    "                    this.style = this._kctBaseStyle;\n" +
+                    "                }\n" +
+                    "                origText.set.call(this, parsed.text);\n" +
+                    "                return;\n" +
+                    "            }\n\n" +
+
+                    "            const base = this._kctBaseStyle;\n" +
+                    "            if (base) {\n" +
+                    "                const next = new PIXI.TextStyle(base);\n\n" +
+
+                    "                if (parsed.scale !== 1)\n" +
+                    "                    next.fontSize = base.fontSize * parsed.scale;\n\n" +
+
+                    "                if (parsed.color)\n" +
+                    "                    next.fill = parsed.color;\n\n" +
+
+                    "                if (parsed.weight)\n" +
+                    "                    next.fontWeight = parsed.weight;\n\n" +
+
+                    "                if (parsed.line) {\n" +
+                    "                    next.wordWrap = true;\n" +
+                    "                    next.wordWrapWidth = parsed.line;\n" +
+                    "                }\n\n" +
+
+                    "                if (parsed.leading)\n" +
+                    "                    next.leading = parsed.leading;\n\n" +
+
+                    "                this.style = next;\n" +
+                    "            }\n\n" +
+
+                    "            origText.set.call(this, parsed.text);\n" +
+                    "        }\n" +
+                    "    });\n" +
+                    "})();\n";
+        }
+
         return main_js + ";\n" +
-                "var KCT_TLS = " + translations + "\n" +
-                "var KCT_REPLACEMENTS = " + regex + "\n\n" +
-
-                "Object.defineProperty(PIXI.Text.prototype, \"text\", {  get() { return this._text; }, set(text) {\n" +
-                "        const replaced = KCT_TLS[text]\n" +
-                "        if (replaced !== undefined)\n" +
-                "            text = replaced\n" +
-                "        else if (text != null) {\n" +
-                "            for (const [from, to] of KCT_REPLACEMENTS)\n" +
-                "                text = text.replace(new RegExp(from, \"g\"), to)\n" +
-                "        }\n" +
-                "        text = String(text === '' || text === null || text === undefined ? ' ' : text);\n\n" +
-
-                "        if (this._text === text)\n" +
-                "            return;\n\n" +
-
-                "        this._text = text;\n" +
-                "        this.dirty = true;\n" +
-                "}})\n";
+                "var KCT_TLS = " + translations + ";\n" +
+                "var KCT_REPLACEMENTS = " + regex + ";\n\n" +
+                patcherContents;
     }
 
     private static boolean listExternalFiles(String path, List<String> fileList, Activity activity) {
@@ -135,6 +236,20 @@ public class KenPatcher {
             return new JsonParser().parse(new String(buffer, "UTF-8"));
 
         } catch (IOException | JsonSyntaxException ex) {
+            ex.printStackTrace();
+        }
+        return null;
+    }
+
+    public static String loadExternalText(String filename) {
+        try {
+            File file = new File(filename);
+            FileInputStream stream = new FileInputStream(file);
+            byte[] buffer = new byte[stream.available()];
+            stream.read(buffer);
+            stream.close();
+            return new String(buffer, "UTF-8");
+        } catch (IOException ex) {
             ex.printStackTrace();
         }
         return null;

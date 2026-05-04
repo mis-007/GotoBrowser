@@ -18,6 +18,7 @@ import com.antest1.gotobrowser.Helpers.BackPressCloseHandler;
 import com.antest1.gotobrowser.Helpers.GotoVersionCheck;
 import com.antest1.gotobrowser.Helpers.KcEnUtils;
 import com.antest1.gotobrowser.Helpers.KcUtils;
+import com.antest1.gotobrowser.Helpers.KenPatcher;
 import com.antest1.gotobrowser.Helpers.VersionDatabase;
 import com.antest1.gotobrowser.R;
 import com.google.android.material.button.MaterialButton;
@@ -67,6 +68,7 @@ public class EntranceActivity extends AppCompatActivity {
     private TextView selectText;
     private VersionDatabase versionTable;
     private boolean kcanotifyInstalledFlag;
+    private KenPatcher kenPatcher = new KenPatcher();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -87,6 +89,7 @@ public class EntranceActivity extends AppCompatActivity {
         BackPressCloseHandler backPressCloseHandler = new BackPressCloseHandler(this, true);
         sharedPref = getSharedPreferences(getString(R.string.preference_key), Context.MODE_PRIVATE);
         SettingsActivity.setInitialSettings(sharedPref);
+        kenPatcher.prepare(this);
 
         getOnBackPressedDispatcher().addCallback(this, backPressCloseHandler);
 
@@ -312,9 +315,12 @@ public class EntranceActivity extends AppCompatActivity {
             cache_old.delete();
         }
 
-        // clear patched cache cidr
-        String patched_cache_dir = KcUtils.getAppCacheFileDir(getApplicationContext(), "/_patched_cache/");
-        clearApplicationCache(getApplicationContext(), new File(patched_cache_dir));
+        // clear patched cache dir
+        for (KenPatcher.PatchLanguage language : KenPatcher.PatchLanguage.values()) {
+            String folderName = "/_patched_cache_" + language.name().toLowerCase();
+            String patched_cache_dir = KcUtils.getAppCacheFileDir(getApplicationContext(), folderName);
+            clearApplicationCache(getApplicationContext(), new File(patched_cache_dir));
+        }
     }
 
     private void startBrowserActivity() {

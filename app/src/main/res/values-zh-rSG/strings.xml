@@ -80,9 +80,9 @@
     <string name="settings_mod_kantai3d_about">关于Kantai3D</string>
     <string name="settings_mod_kantaien_enable">[Beta] KanColle English Patch</string>
     <string name="settings_mod_kantaien_summary">将游戏界面翻译成英文。作者：@Oradimi</string>
-    <string name="settings_mod_kantaien_download">下载English Patch资料</string>
+    <string name="settings_mod_kantaien_download">下载Patch资料</string>
     <string name="settings_mod_kantaien_download_start">正在下载… 您可以在下载时将应用程式留在背景。</string>
-    <string name="settings_mod_kantaien_delete">删除English Patch资料</string>
+    <string name="settings_mod_kantaien_delete">删除Patch资料</string>
     <string name="settings_mod_kantaien_delete_summary">如果修补程式出现预期外行为，或者在下载过程中出现问题，请使用此设定。</string>
     <string name="settings_mod_kantaien_about">KanColle English Patch关于</string>
     <string name="settings_mod_fps_enable">移除60帧限制</string>
@@ -98,10 +98,10 @@
 
     <string name="en_download_start">下载开始…</string>
     <string name="en_unzip_start">正在解压缩……请稍候……</string>
-    <string name="en_unzip_done">English Patch解压缩完成！</string>
-    <string name="en_update_done">English Patch更新完成！</string>
-    <string name="en_install_done_notification">已安装English Patch！ 请重新开始游戏。</string>
-    <string name="en_update_done_notification">English Patch已更新！ 请重新开始游戏。</string>
+    <string name="en_unzip_done">Patch解压缩完成！</string>
+    <string name="en_update_done">Patch更新完成！</string>
+    <string name="en_install_done_notification">已安装Patch！ 请重新开始游戏。</string>
+    <string name="en_update_done_notification">Patch已更新！ 请重新开始游戏。</string>
 
     <string name="browser_ui_hint_text">« 点选外侧任意位置开启面板 »</string>
 

@@ -28,6 +28,7 @@ import com.antest1.gotobrowser.BuildConfig;
 import com.antest1.gotobrowser.Helpers.GotoVersionCheck;
 import com.antest1.gotobrowser.Helpers.KcEnUtils;
 import com.antest1.gotobrowser.Helpers.KcUtils;
+import com.antest1.gotobrowser.Helpers.KenPatcher;
 import com.antest1.gotobrowser.Helpers.VersionDatabase;
 import com.antest1.gotobrowser.Preference.MaterialListPreference;
 import com.antest1.gotobrowser.R;
@@ -66,6 +67,7 @@ import static com.antest1.gotobrowser.Constants.PREF_MOD_KANTAIEN_DELETE;
 import static com.antest1.gotobrowser.Constants.PREF_MOD_KANTAIEN_UPDATE;
 import static com.antest1.gotobrowser.Constants.PREF_MOD_CRIT;
 import static com.antest1.gotobrowser.Constants.PREF_MOD_KANTAI3D;
+import static com.antest1.gotobrowser.Constants.PREF_MOD_KANTAIID;
 import static com.antest1.gotobrowser.Constants.PREF_MULTIWIN_MARGIN;
 import static com.antest1.gotobrowser.Constants.PREF_DISABLE_REFRESH_DIALOG;
 import static com.antest1.gotobrowser.Constants.PREF_PIP_MODE;
@@ -115,6 +117,7 @@ public class SettingsActivity extends AppCompatActivity {
                 case PREF_TP_DISCLAIMED:
                 case PREF_MOD_KANTAI3D:
                 case PREF_MOD_KANTAIEN:
+                case PREF_MOD_KANTAIID:
                 case PREF_MOD_FPS:
                 case PREF_MOD_CRIT:
                 case PREF_LEGACY_RENDERER:
@@ -279,13 +282,15 @@ public class SettingsActivity extends AppCompatActivity {
                 preference.setSummary(stringValue);
             }
             else if (preference instanceof SwitchPreferenceCompat) {
-                sharedPref.edit().putBoolean(key, (boolean) newValue).apply();
+                boolean value = (boolean) newValue;
+                sharedPref.edit().putBoolean(key, value).apply();
+
+                handleMutualExclusiveMods(key, value);
+
                 if (key.equals(PREF_USE_EXTCACHE)) {
                     updateSubtitleDescriptionText();
                 }
-                if (key.equals(PREF_MOD_KANTAIEN)) {
-                    updateKantaiEnDescriptionText();
-                }
+
                 if (key.equals(PREF_LEGACY_RENDERER)) {
                     updateKantai3dDisable();
                 }
@@ -322,15 +327,35 @@ public class SettingsActivity extends AppCompatActivity {
         private void updateKantaiEnDescriptionText() {
             Preference kantaiEnUpdate = findPreference(PREF_MOD_KANTAIEN_UPDATE);
             if (kantaiEnUpdate != null) {
-                if (sharedPref.getBoolean(PREF_MOD_KANTAIEN, false)) {
-                    kantaiEnUpdate.setSummary("Checking updates...");
-                    kantaiEnUpdate.setEnabled(false);
+                if (sharedPref.getBoolean(PREF_MOD_KANTAIEN, false) ||
+                        sharedPref.getBoolean(PREF_MOD_KANTAIID, false)) {
                     enUtils.checkKantaiEnUpdate(this, kantaiEnUpdate);
                 } else {
                     kantaiEnUpdate.setEnabled(false);
                     kantaiEnUpdate.setSummary("Mod disabled.");
                 }
             }
+        }
+
+        private void handleMutualExclusiveMods(String key, boolean value) {
+            if (key.equals(PREF_MOD_KANTAIEN) && value) {
+                KcEnUtils.setPatchLanguage(KenPatcher.PatchLanguage.EN);
+                toggleOff(PREF_MOD_KANTAIID);
+                updateKantaiEnDescriptionText();
+            } else if (key.equals(PREF_MOD_KANTAIID) && value) {
+                KcEnUtils.setPatchLanguage(KenPatcher.PatchLanguage.ID);
+                toggleOff(PREF_MOD_KANTAIEN);
+                updateKantaiEnDescriptionText();
+            } else {
+                KcEnUtils.setPatchLanguage(KenPatcher.PatchLanguage.NONE);
+                updateKantaiEnDescriptionText();
+            }
+        }
+
+        private void toggleOff(String key) {
+            sharedPref.edit().putBoolean(key, false).apply();
+            SwitchPreferenceCompat pref = findPreference(key);
+            if (pref != null) pref.setChecked(false);
         }
 
         private void showSubtitleFontSizeDialog(FragmentActivity activity) {
