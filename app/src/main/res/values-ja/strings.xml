@@ -80,12 +80,19 @@
     <string name="settings_mod_kantai3d_summary">一部の秘書艦に3Dのような視覚効果とおける乳揺れを追加します。作者：@laplamgor</string>
     <string name="settings_mod_kantai3d_about">About Kantai3D</string>
     <string name="settings_mod_kantaien_enable">KanColle English Patch</string>
-    <string name="settings_mod_kantaien_summary">ゲームを英語に翻訳する。作者：@Oradimi</string>
-    <string name="settings_mod_kantaien_download">Patchデータダウンロード</string>
+    <string name="settings_mod_kantaien_download">パッチデータダウンロード</string>
     <string name="settings_mod_kantaien_download_start">ダウンロード中… アプリケーションをバックグラウンドにしたままにしておくことができます。</string>
-    <string name="settings_mod_kantaien_delete">Patchデータ削除</string>
+    <string name="settings_mod_kantaien_delete">パッチデータ削除</string>
     <string name="settings_mod_kantaien_delete_summary">パッチが予期しない動作を示している場合、またはダウンロード中に問題が発生した場合は、この設定を使用します。</string>
     <string name="settings_mod_kantaien_about">KanColle English Patchについて</string>
+    <string name="settings_mod_kantaiid_about">KanColle Indonesia Patchについて</string>
+
+    <string name="settings_mod_kccp">KanColle Language Patch (KCCP)</string>
+    <string name="settings_mod_kccp_summary">ゲーム内のテキストを他の言語に翻訳する</string>
+    <string name="settings_mod_kccp_patch_name">適用する言語パッチ</string>
+    <string name="settings_mod_kccp_patch_en_summary">KanColle English Patch (作者: @Oradimi)</string>
+    <string name="settings_mod_kccp_patch_id_summary">KanColle Indonesia Patch (作者: @SLAVUSworks)</string>
+
     <string name="settings_mod_fps_enable">60FPS制限を削除します</string>
     <string name="settings_mod_fps_summary">高リフレッシュ・レート対応。ゲームの速度は影響を受けません。</string>
     <string name="settings_mod_crit_enable">真のクリティカルヒット</string>

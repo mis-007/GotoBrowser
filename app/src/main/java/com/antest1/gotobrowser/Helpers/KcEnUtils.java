@@ -31,6 +31,7 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Objects;
@@ -109,7 +110,9 @@ public class KcEnUtils {
 
     }
 
-    public static void setPatchLanguage(KenPatcher.PatchLanguage language) {
+    public void setPatchLanguage(String preference) {
+        KenPatcher.PatchLanguage language =
+                KenPatcher.getCurrentPatchLanguage(preference);
         KenPatcher.setPatchLanguage(language);
     }
 
@@ -187,14 +190,14 @@ public class KcEnUtils {
                     }
 
                 } catch (IOException e) {
-                    e.printStackTrace();
+                    Log.e("GOTO", KcUtils.getStringFromException(e));
                     resultData.addProperty("error", getStringFromException(e));
                 }
                 return resultData;
             });
             enPatchInfo = result.get();
         } catch (Exception e) {
-            e.printStackTrace();
+            Log.e("GOTO", KcUtils.getStringFromException(e));
             enPatchInfo.addProperty("error", getStringFromException(e));
         }
         Log.e("GOTO", "enPatchInfo: " + enPatchInfo.toString());
@@ -218,13 +221,13 @@ public class KcEnUtils {
                         }
                     }
                 } catch (IOException e) {
-                    e.printStackTrace();
+                    Log.e("GOTO", KcUtils.getStringFromException(e));
                 }
                 return resultData;
             });
             enVersionInfo = result.get();
         } catch (Exception e) {
-            e.printStackTrace();
+            Log.e("GOTO", KcUtils.getStringFromException(e));
         }
         Log.e("GOTO", "enPatchInfo: " + enVersionInfo.toString());
         return enVersionInfo;
@@ -252,7 +255,7 @@ public class KcEnUtils {
             newVersionFlag = false;
         } else {
             enPatchLocalInfo = KcUtils.readJsonObjectFromFile(enPatchLocalInfoFile.getPath());
-            if (enPatchLocalInfo.has("version")) {
+            if (enPatchLocalInfo != null && enPatchLocalInfo.has("version")) {
                 currentVersion = enPatchLocalInfo.get("version").getAsString();
                 if (!currentVersion.equals(availableVersion)) {
                     kantaiEnUpdate.setSummary(String.format(Locale.US,
@@ -301,7 +304,7 @@ public class KcEnUtils {
             return (con.getResponseCode() == HttpURLConnection.HTTP_OK);
         }
         catch (Exception e) {
-            e.printStackTrace();
+            Log.e("GOTO", KcUtils.getStringFromException(e));
             return false;
         }
     }
@@ -353,9 +356,10 @@ public class KcEnUtils {
     public static Set<String> listFiles(String dir) {
         Set<String> files = new HashSet<>();
         File[] fileList = new File(dir).listFiles();
-
-        for (File f: fileList) {
-            if (!f.isDirectory()) files.add(f.getName());
+        if (fileList != null) {
+            for (File f: fileList) {
+                if (!f.isDirectory()) files.add(f.getName());
+            }
         }
         return files;
     }
@@ -439,8 +443,9 @@ public class KcEnUtils {
             for (byte md5Byte : md5Bytes) {
                 returnVal.append(Integer.toString((md5Byte & 0xff) + 0x100, 16).substring(1));
             }
+        } catch (NoSuchAlgorithmException | IOException e) {
+            Log.e("GOTO", KcUtils.getStringFromException(e));
         }
-        catch(Throwable t) {t.printStackTrace();}
         return returnVal.toString().toUpperCase();
     }
 
@@ -745,7 +750,7 @@ public class KcEnUtils {
                 try {
                     file.createNewFile();
                 } catch (IOException e) {
-                    e.printStackTrace();
+                    Log.e("GOTO", KcUtils.getStringFromException(e));
                     return -1;
                 }
                 Log.e("GOTO", "Created .nomedia file");
@@ -759,7 +764,7 @@ public class KcEnUtils {
                 boolean deleted = zipOut.delete();
                 return deleted ? 1 : 0;
             } catch (Exception e) {
-                e.printStackTrace();
+                Log.e("GOTO", KcUtils.getStringFromException(e));
                 return -1;
             }
         }
@@ -767,27 +772,29 @@ public class KcEnUtils {
         @Override
         protected void onPostExecute(Integer integer) {
             super.onPostExecute(integer);
-            if (integer == 1) {
-                Log.e("GOTO", "Zip was deleted");
-                KcUtils.showToast(context, R.string.en_install_done_notification);
-                if (fragment != null) {
-                    Preference kantaiEnUpdate = fragment.findPreference(PREF_MOD_KANTAIEN_UPDATE);
+
+            Preference kantaiEnUpdate = null;
+            if (fragment != null) kantaiEnUpdate =
+                    fragment.findPreference(PREF_MOD_KANTAIEN_UPDATE);
+
+            if (kantaiEnUpdate != null) {
+                if (integer == 1) {
+                    Log.e("GOTO", "Zip was deleted");
+                    KcUtils.showToast(context, R.string.en_install_done_notification);
                     kantaiEnUpdate.setSummary(fragment.getString(R.string.setting_latest_version));
                     kantaiEnUpdate.setEnabled(false);
-                }
-            } else if (integer == 0) {
-                Log.e("GOTO", "Zip wasn't deleted");
-                KcUtils.showToast(context, "Download successful but zip was not deleted");
-                if (fragment != null) {
-                    Preference kantaiEnUpdate = fragment.findPreference(PREF_MOD_KANTAIEN_UPDATE);
+                } else if (integer == 0) {
+                    Log.e("GOTO", "Zip wasn't deleted");
+                    KcUtils.showToast(context, "Download successful but zip was not deleted");
                     kantaiEnUpdate.setSummary(fragment.getString(R.string.setting_latest_version));
                     kantaiEnUpdate.setEnabled(false);
+                } else if (integer == -1) {
+                    Log.e("GOTO", "Error occurred while downloading");
+                    KcUtils.showToast(context, "Error occurred while downloading");
                 }
-            } else if (integer == -1) {
-                Log.e("GOTO", "Error occurred while downloading");
-                KcUtils.showToast(context, "Error occurred while downloading");
             }
-            mProgressDialog.dismiss();
+
+            if (mProgressDialog != null) mProgressDialog.dismiss();
         }
     }
 }

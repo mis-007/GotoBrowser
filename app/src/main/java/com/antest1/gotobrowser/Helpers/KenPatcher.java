@@ -12,8 +12,9 @@ import com.google.gson.JsonParser;
 
 import com.google.gson.JsonSyntaxException;
 
-import static com.antest1.gotobrowser.Constants.PREF_MOD_KANTAIEN;
-import static com.antest1.gotobrowser.Constants.PREF_MOD_KANTAIID;
+import static com.antest1.gotobrowser.Constants.PREF_MOD_KCCP_LANG_PATCH_EN;
+import static com.antest1.gotobrowser.Constants.PREF_MOD_KCCP_LANG_PATCH_ID;
+import static com.antest1.gotobrowser.Constants.PREF_MOD_KCCP_LANG_PATCH_NAME;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -44,14 +45,24 @@ public class KenPatcher {
         patchLanguage = language;
     }
 
+    public static PatchLanguage getCurrentPatchLanguage(String pref) {
+        if (PREF_MOD_KCCP_LANG_PATCH_EN.equals(pref)) {
+            return PatchLanguage.EN;
+        } else if (PREF_MOD_KCCP_LANG_PATCH_ID.equals(pref)) {
+            return PatchLanguage.ID;
+        } else { // fallback
+            return PatchLanguage.EN;
+        }
+    }
+
     public void prepare(Activity activity) {
         // Only update the enable status when opening the browser view
         // Require reopening the browser after switching the MOD on or off
         SharedPreferences sharedPref = activity.getSharedPreferences(
                 activity.getString(R.string.preference_key), Context.MODE_PRIVATE);
-        patchLanguage = sharedPref.getBoolean(PREF_MOD_KANTAIEN, false) ? PatchLanguage.EN :
-                sharedPref.getBoolean(PREF_MOD_KANTAIID, false) ? PatchLanguage.ID :
-                        PatchLanguage.NONE;
+        patchLanguage = getCurrentPatchLanguage(
+                sharedPref.getString(PREF_MOD_KCCP_LANG_PATCH_NAME, "")
+        );
     }
 
     public static String patchKantaiEn(String main_js, Activity activity) {
@@ -236,7 +247,7 @@ public class KenPatcher {
             return new JsonParser().parse(new String(buffer, "UTF-8"));
 
         } catch (IOException | JsonSyntaxException ex) {
-            ex.printStackTrace();
+            Log.e("GOTO", KcUtils.getStringFromException(ex));
         }
         return null;
     }
@@ -250,7 +261,7 @@ public class KenPatcher {
             stream.close();
             return new String(buffer, "UTF-8");
         } catch (IOException ex) {
-            ex.printStackTrace();
+            Log.e("GOTO", KcUtils.getStringFromException(ex));
         }
         return null;
     }

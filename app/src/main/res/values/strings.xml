@@ -89,15 +89,21 @@
     <string name="settings_mod_kantai3d_summary">Add 3D-like visual effects and jiggle physics to some of your secretaries. Author: @laplamgor</string>
     <string name="settings_mod_kantai3d_about">About Kantai3D</string>
     <string name="settings_mod_kantaien_enable">KanColle English Patch</string>
-    <string name="settings_mod_kantaien_summary">Translates most of the game into English. Author: @Oradimi</string>
-    <string name="settings_mod_kantaiid_enable">KanColle Indonesia Patch</string>
-    <string name="settings_mod_kantaiid_summary">Translates most of the game into Indonesian. Author: @SLAVUSworks</string>
     <string name="settings_mod_kantaien_download">Download Patch Data</string>
     <string name="settings_mod_kantaien_download_start">Downloading… You can leave the application in the background while downloading.</string>
     <string name="settings_mod_kantaien_delete">Delete Patch Data</string>
     <string name="settings_mod_kantaien_delete_summary">Use this setting if the patch is presenting unexpected behaviour, or if something went wrong during download.</string>
     <string name="settings_mod_kantaien_about">About KanColle English Patch</string>
     <string name="settings_mod_kantaiid_about">About KanColle Indonesia Patch</string>
+
+    <string name="settings_mod_kccp">KanColle Language Patch (KCCP)</string>
+    <string name="settings_mod_kccp_summary">Translate in-game text into other languages</string>
+    <string name="settings_mod_kccp_patch_name">Language Patch to Apply</string>
+    <string name="settings_mod_kccp_patch_en_summary">KanColle English Patch (Author: @Oradimi)</string>
+    <string name="settings_mod_kccp_patch_id_summary">KanColle Indonesia Patch (Author: @SLAVUSworks)</string>
+    <string name="settings_mod_kccp_patch_en_link" formatted="false" translatable="false">https://github.com/Oradimi/KanColle-English-Patch-KCCP</string>
+    <string name="settings_mod_kccp_patch_id_link" formatted="false" translatable="false">https://github.com/SLAVUSworks/KanColle-Indonesia-Patch-KCCP</string>
+
     <string name="settings_mod_fps_enable">Remove 60 FPS limit</string>
     <string name="settings_mod_fps_summary">Support higher refresh rate devices. Animation speed is not affected.</string>
     <string name="settings_mod_crit_enable">True Critical Hits</string>
