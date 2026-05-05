@@ -44,7 +44,7 @@ For related information, refer to the <span class="link" data-move="gadgetbypass
 | Remove 60 FPS limit | Enables smooth animations on devices supporting high screen refresh rates (120hz). | [@laplamgor](https://x.com/laplamgor) |
 | Kantai3D v4.0 | Add 3D-like visual effects and jiggle physics to some of your secretaries. | [@laplamgor](https://x.com/laplamgor) | 
 | True Critical Hits | Removes some hard-coded obfuscation for hits. Only a critical hit (CL2) will be displayed as such, etc. | [@Oradimi](https://x.com/oradimi) |
-| KanColle English Patch | Apply [English patch](https://github.com/Oradimi/KanColle-English-Patch-KCCP) to in-game resources (beta) | [@Oradimi](https://x.com/oradimi) |
+| KanColle English Patch | Apply translation patch to in-game resources ([English](https://github.com/Oradimi/KanColle-English-Patch-KCCP), [Indonesian](https://github.com/SLAVUSworks/KanColle-Indonesia-Patch-KCCP)). | [@Oradimi](https://x.com/oradimi) |
 
 ##### App Information
 
