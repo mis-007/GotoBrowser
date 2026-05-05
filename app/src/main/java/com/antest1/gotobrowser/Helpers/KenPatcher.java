@@ -12,6 +12,7 @@ import com.google.gson.JsonParser;
 
 import com.google.gson.JsonSyntaxException;
 
+import static com.antest1.gotobrowser.Constants.PREF_MOD_KCCP_LANG_PATCH;
 import static com.antest1.gotobrowser.Constants.PREF_MOD_KCCP_LANG_PATCH_EN;
 import static com.antest1.gotobrowser.Constants.PREF_MOD_KCCP_LANG_PATCH_ID;
 import static com.antest1.gotobrowser.Constants.PREF_MOD_KCCP_LANG_PATCH_NAME;
@@ -60,9 +61,13 @@ public class KenPatcher {
         // Require reopening the browser after switching the MOD on or off
         SharedPreferences sharedPref = activity.getSharedPreferences(
                 activity.getString(R.string.preference_key), Context.MODE_PRIVATE);
-        patchLanguage = getCurrentPatchLanguage(
-                sharedPref.getString(PREF_MOD_KCCP_LANG_PATCH_NAME, "")
-        );
+        if (sharedPref.getBoolean(PREF_MOD_KCCP_LANG_PATCH, false)) {
+            patchLanguage = getCurrentPatchLanguage(
+                    sharedPref.getString(PREF_MOD_KCCP_LANG_PATCH_NAME, "")
+            );
+        } else {
+            patchLanguage = PatchLanguage.NONE;
+        }
     }
 
     public static String patchKantaiEn(String main_js, Activity activity) {

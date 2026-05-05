@@ -39,12 +39,12 @@
 
 ##### 서드파티 모드
 
-| 이름 | 설명 | 저자 |
-| --- | --- | --- |
-| 60FPS 제한 제거 | 높은 화면 재생률(120hz)을 지원하는 장비에서 부드러운 애니메이션 재생 가능 | [@laplamgor](https://x.com/laplamgor) |
-| Kantai3D v4.0 | 일부 비서함에 3D 효과 적용 | [@laplamgor](https://x.com/laplamgor) |
-| 진정한 크리티컬 히트 | CL2가 발생한 경우에만 크리티컬 히트 표시 | [@Oradimi](https://x.com/oradimi) |
-| KanColle English Patch | 게임 내 리소스에 [영문 패치](https://github.com/Oradimi/KanColle-English-Patch-KCCP) 적용 (베타) | [@Oradimi](https://x.com/oradimi) |
+| 이름 | 설명                                                                                                                                                     | 저자 |
+| --- |--------------------------------------------------------------------------------------------------------------------------------------------------------| --- |
+| 60FPS 제한 제거 | 높은 화면 재생률(120hz)을 지원하는 장비에서 부드러운 애니메이션 재생 가능                                                                                                           | [@laplamgor](https://x.com/laplamgor) |
+| Kantai3D v4.0 | 일부 비서함에 3D 효과 적용                                                                                                                                       | [@laplamgor](https://x.com/laplamgor) |
+| 진정한 크리티컬 히트 | CL2가 발생한 경우에만 크리티컬 히트 표시                                                                                                                               | [@Oradimi](https://x.com/oradimi) |
+| KanColle Language Patch | 게임 내 리소스에 번역 패치 적용 ([영어](https://github.com/Oradimi/KanColle-English-Patch-KCCP), [인니어](https://github.com/SLAVUSworks/KanColle-Indonesia-Patch-KCCP)) | [@Oradimi](https://x.com/oradimi) |
 
 ##### 어플리케이션 정보
 
