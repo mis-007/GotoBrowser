@@ -78,13 +78,20 @@
     <string name="settings_mod_kantai3d_enable">Kantai3D v4.0</string>
     <string name="settings_mod_kantai3d_summary">为部份秘书舰添加仿立体以及乳摇视觉效果。作者：@laplamgor</string>
     <string name="settings_mod_kantai3d_about">关于Kantai3D</string>
-    <string name="settings_mod_kantaien_enable">[Beta] KanColle English Patch</string>
-    <string name="settings_mod_kantaien_summary">将游戏界面翻译成英文。作者：@Oradimi</string>
-    <string name="settings_mod_kantaien_download">下载English Patch资料</string>
+    <string name="settings_mod_kantaien_enable">KanColle English Patch</string>
+    <string name="settings_mod_kantaien_download">下载补丁资料</string>
     <string name="settings_mod_kantaien_download_start">正在下载… 您可以在下载时将应用程式留在背景。</string>
-    <string name="settings_mod_kantaien_delete">删除English Patch资料</string>
+    <string name="settings_mod_kantaien_delete">删除补丁资料</string>
     <string name="settings_mod_kantaien_delete_summary">如果修补程式出现预期外行为，或者在下载过程中出现问题，请使用此设定。</string>
     <string name="settings_mod_kantaien_about">KanColle English Patch关于</string>
+    <string name="settings_mod_kantaiid_about">KanColle Indonesia Patch关于</string>
+
+    <string name="settings_mod_kccp">KanColle Language Patch (KCCP)</string>
+    <string name="settings_mod_kccp_summary">将游戏界面翻译成其他语言</string>
+    <string name="settings_mod_kccp_patch_name">要使用的补丁</string>
+    <string name="settings_mod_kccp_patch_en_summary">KanColle English Patch (作者: @Oradimi)</string>
+    <string name="settings_mod_kccp_patch_id_summary">KanColle Indonesia Patch (作者: @SLAVUSworks)</string>
+
     <string name="settings_mod_fps_enable">移除60帧限制</string>
     <string name="settings_mod_fps_summary">支援高萤幕更新率手机，不会影响游戏动画速度。</string>
     <string name="settings_mod_crit_enable">真正的Critical hit</string>
@@ -98,10 +105,10 @@
 
     <string name="en_download_start">下载开始…</string>
     <string name="en_unzip_start">正在解压缩……请稍候……</string>
-    <string name="en_unzip_done">English Patch解压缩完成！</string>
-    <string name="en_update_done">English Patch更新完成！</string>
-    <string name="en_install_done_notification">已安装English Patch！ 请重新开始游戏。</string>
-    <string name="en_update_done_notification">English Patch已更新！ 请重新开始游戏。</string>
+    <string name="en_unzip_done">Patch解压缩完成！</string>
+    <string name="en_update_done">Patch更新完成！</string>
+    <string name="en_install_done_notification">已安装Patch！ 请重新开始游戏。</string>
+    <string name="en_update_done_notification">Patch已更新！ 请重新开始游戏。</string>
 
     <string name="browser_ui_hint_text">« 点选外侧任意位置开启面板 »</string>
 

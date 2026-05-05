@@ -3,12 +3,13 @@ package com.antest1.gotobrowser.Activity;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
-import android.widget.SeekBar;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
@@ -61,11 +62,16 @@ import static com.antest1.gotobrowser.Constants.PREF_KEYBOARD;
 import static com.antest1.gotobrowser.Constants.PREF_LANDSCAPE;
 import static com.antest1.gotobrowser.Constants.PREF_LEGACY_RENDERER;
 import static com.antest1.gotobrowser.Constants.PREF_MOD_FPS;
-import static com.antest1.gotobrowser.Constants.PREF_MOD_KANTAIEN;
+import static com.antest1.gotobrowser.Constants.PREF_MOD_KANTAIEN_LEGACY;
+import static com.antest1.gotobrowser.Constants.PREF_MOD_KCCP_LANG_PATCH;
 import static com.antest1.gotobrowser.Constants.PREF_MOD_KANTAIEN_DELETE;
 import static com.antest1.gotobrowser.Constants.PREF_MOD_KANTAIEN_UPDATE;
 import static com.antest1.gotobrowser.Constants.PREF_MOD_CRIT;
 import static com.antest1.gotobrowser.Constants.PREF_MOD_KANTAI3D;
+import static com.antest1.gotobrowser.Constants.PREF_MOD_KCCP_LANG_PATCH_EN;
+import static com.antest1.gotobrowser.Constants.PREF_MOD_KCCP_LANG_PATCH_GITHUB;
+import static com.antest1.gotobrowser.Constants.PREF_MOD_KCCP_LANG_PATCH_ID;
+import static com.antest1.gotobrowser.Constants.PREF_MOD_KCCP_LANG_PATCH_NAME;
 import static com.antest1.gotobrowser.Constants.PREF_MULTIWIN_MARGIN;
 import static com.antest1.gotobrowser.Constants.PREF_DISABLE_REFRESH_DIALOG;
 import static com.antest1.gotobrowser.Constants.PREF_PIP_MODE;
@@ -114,13 +120,15 @@ public class SettingsActivity extends AppCompatActivity {
                 case PREF_DEVTOOLS_DEBUG:
                 case PREF_TP_DISCLAIMED:
                 case PREF_MOD_KANTAI3D:
-                case PREF_MOD_KANTAIEN:
                 case PREF_MOD_FPS:
                 case PREF_MOD_CRIT:
                 case PREF_LEGACY_RENDERER:
                 case PREF_ALTER_GADGET:
                 case PREF_DISABLE_REFRESH_DIALOG:
                     editor.putBoolean(key, false);
+                    break;
+                case PREF_MOD_KCCP_LANG_PATCH:
+                    editor.putBoolean(key, sharedPref.getBoolean(PREF_MOD_KANTAIEN_LEGACY, false));
                     break;
                 case PREF_ALTER_METHOD:
                     editor.putString(key, PREF_ALTER_METHOD_URL);
@@ -133,6 +141,9 @@ public class SettingsActivity extends AppCompatActivity {
                     break;
                 case PREF_SUBTITLE_FONTSIZE:
                     editor.putInt(key, DEFAULT_SUBTITLE_FONT_SIZE);
+                    break;
+                case PREF_MOD_KCCP_LANG_PATCH_NAME:
+                    editor.putString(key, PREF_MOD_KCCP_LANG_PATCH_EN);
                     break;
                 default:
                     editor.putString(key, "");
@@ -168,6 +179,19 @@ public class SettingsActivity extends AppCompatActivity {
                     if (preference == null) continue;
                     if (preference instanceof ListPreference) {
                         Log.e("GOTO", key + ": " + sharedPref.getString(key, ""));
+                        if (PREF_MOD_KCCP_LANG_PATCH_NAME.equals(key)) {
+                            preference.setSummaryProvider((Preference.SummaryProvider<ListPreference>) pref -> {
+                                String value = pref.getValue();
+                                Log.e("GOTO", "PREF_MOD_KCCP_LANG_PATCH_NAME: " + value);
+                                if (PREF_MOD_KCCP_LANG_PATCH_EN.equals(value)) {
+                                    return getString(R.string.settings_mod_kccp_patch_en_summary);
+                                } else if (PREF_MOD_KCCP_LANG_PATCH_ID.equals(value)) {
+                                    return getString(R.string.settings_mod_kccp_patch_id_summary);
+                                } else {
+                                    return pref.getEntry();
+                                }
+                            });
+                        }
                     } else if (preference instanceof EditTextPreference ep) {
                         Log.e("GOTO", key + ": " + sharedPref.getString(key, ""));
                         ep.setSummary(sharedPref.getString(key, ""));
@@ -185,9 +209,6 @@ public class SettingsActivity extends AppCompatActivity {
                         preference.setOnPreferenceClickListener(this);
                     }
                 }
-                updateSubtitleDescriptionText();
-                updateKantaiEnDescriptionText();
-                updateKantai3dDisable();
             }
         }
 
@@ -198,6 +219,10 @@ public class SettingsActivity extends AppCompatActivity {
             if (version_pref != null) {
                 version_pref.setSummary(BuildConfig.VERSION_NAME);
             }
+            updateSubtitleDescriptionText();
+            updateKCCPLangPatchDescriptionText(null);
+            updateKCCPLangPatchInfo(null);
+            updateKantai3dDisable();
         }
 
         @Override
@@ -216,7 +241,7 @@ public class SettingsActivity extends AppCompatActivity {
                             enUtils.requestPatchUpdate(this);
                         }
                     } catch (IOException e) {
-                        e.printStackTrace();
+                        Log.e("GOTO", KcUtils.getStringFromException(e));
                     }
                     break;
                 case PREF_MOD_KANTAIEN_DELETE:
@@ -267,9 +292,15 @@ public class SettingsActivity extends AppCompatActivity {
                         return false;
                     }
                 }
+
                 sharedPref.edit().putString(key, stringValue).apply();
                 if (key.equals(PREF_SUBTITLE_LOCALE)) {
                     setSubtitlePreference(stringValue);
+                }
+
+                if (key.equals(PREF_MOD_KCCP_LANG_PATCH_NAME)) {
+                    updateKCCPLangPatchInfo(stringValue);
+                    updateKCCPLangPatchDescriptionText(stringValue);
                 }
             }
             else if (preference instanceof EditTextPreference) {
@@ -279,15 +310,19 @@ public class SettingsActivity extends AppCompatActivity {
                 preference.setSummary(stringValue);
             }
             else if (preference instanceof SwitchPreferenceCompat) {
-                sharedPref.edit().putBoolean(key, (boolean) newValue).apply();
+                boolean value = (boolean) newValue;
+                sharedPref.edit().putBoolean(key, value).apply();
+
                 if (key.equals(PREF_USE_EXTCACHE)) {
                     updateSubtitleDescriptionText();
                 }
-                if (key.equals(PREF_MOD_KANTAIEN)) {
-                    updateKantaiEnDescriptionText();
-                }
+
                 if (key.equals(PREF_LEGACY_RENDERER)) {
                     updateKantai3dDisable();
+                }
+
+                if (key.equals(PREF_MOD_KCCP_LANG_PATCH)) {
+                    updateKCCPLangPatchDescriptionText(null);
                 }
             }
             return true;
@@ -319,17 +354,37 @@ public class SettingsActivity extends AppCompatActivity {
             SubtitleProviderUtils.getSubtitleProvider(subtitleLocaleCode).checkUpdateFromPreference(this, subtitleLocaleCode, subtitleUpdate, versionTable);
         }
 
-        private void updateKantaiEnDescriptionText() {
-            Preference kantaiEnUpdate = findPreference(PREF_MOD_KANTAIEN_UPDATE);
-            if (kantaiEnUpdate != null) {
-                if (sharedPref.getBoolean(PREF_MOD_KANTAIEN, false)) {
-                    kantaiEnUpdate.setSummary("Checking updates...");
-                    kantaiEnUpdate.setEnabled(false);
-                    enUtils.checkKantaiEnUpdate(this, kantaiEnUpdate);
-                } else {
-                    kantaiEnUpdate.setEnabled(false);
-                    kantaiEnUpdate.setSummary("Mod disabled.");
-                }
+        private void updateKCCPLangPatchInfo(String lang) {
+            ListPreference modKCCPLangPatchName = findPreference(PREF_MOD_KCCP_LANG_PATCH_NAME);
+            Preference modKCCPLangPatchInfo = findPreference(PREF_MOD_KCCP_LANG_PATCH_GITHUB);
+            if (modKCCPLangPatchName == null || modKCCPLangPatchInfo == null) return;
+            if (lang == null) lang = modKCCPLangPatchName.getValue();
+
+            String target_url;
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            if (PREF_MOD_KCCP_LANG_PATCH_ID.equals(lang)) {
+                target_url = getString(R.string.settings_mod_kccp_patch_id_link);
+                modKCCPLangPatchInfo.setTitle(R.string.settings_mod_kantaiid_about);
+            } else { // use EN as default
+                target_url = getString(R.string.settings_mod_kccp_patch_en_link);
+                modKCCPLangPatchInfo.setTitle(R.string.settings_mod_kantaien_about);
+            }
+            intent.setData(Uri.parse(target_url));
+            modKCCPLangPatchInfo.setIntent(intent);
+            modKCCPLangPatchInfo.setSummary(target_url);
+        }
+
+        private void updateKCCPLangPatchDescriptionText(String lang) {
+            ListPreference modKCCPLangPatchName = findPreference(PREF_MOD_KCCP_LANG_PATCH_NAME);
+            Preference modKCCPLangPatchUpdate = findPreference(PREF_MOD_KANTAIEN_UPDATE);
+            if (modKCCPLangPatchName == null || modKCCPLangPatchUpdate == null) return;
+            if (lang == null) lang = modKCCPLangPatchName.getValue();
+
+            if (sharedPref.getBoolean(PREF_MOD_KCCP_LANG_PATCH, false)) {
+                enUtils.setPatchLanguage(lang);
+                enUtils.checkKantaiEnUpdate(this, modKCCPLangPatchUpdate);
+            } else {
+                modKCCPLangPatchUpdate.setSummary("Mod disabled.");
             }
         }
 

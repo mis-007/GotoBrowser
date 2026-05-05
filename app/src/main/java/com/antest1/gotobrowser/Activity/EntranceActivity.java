@@ -8,7 +8,6 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.view.View;
 import android.webkit.WebView;
-import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.TextView;
 
@@ -18,6 +17,7 @@ import com.antest1.gotobrowser.Helpers.BackPressCloseHandler;
 import com.antest1.gotobrowser.Helpers.GotoVersionCheck;
 import com.antest1.gotobrowser.Helpers.KcEnUtils;
 import com.antest1.gotobrowser.Helpers.KcUtils;
+import com.antest1.gotobrowser.Helpers.KenPatcher;
 import com.antest1.gotobrowser.Helpers.VersionDatabase;
 import com.antest1.gotobrowser.R;
 import com.google.android.material.button.MaterialButton;
@@ -52,7 +52,7 @@ import static com.antest1.gotobrowser.Constants.PREF_DMM_PASS;
 import static com.antest1.gotobrowser.Constants.PREF_KEYBOARD;
 import static com.antest1.gotobrowser.Constants.PREF_LATEST_URL;
 import static com.antest1.gotobrowser.Constants.PREF_BROADCAST;
-import static com.antest1.gotobrowser.Constants.PREF_MOD_KANTAIEN;
+import static com.antest1.gotobrowser.Constants.PREF_MOD_KCCP_LANG_PATCH;
 import static com.antest1.gotobrowser.Constants.PREF_PANELSTART;
 import static com.antest1.gotobrowser.Constants.PREF_SILENT;
 import static com.antest1.gotobrowser.Constants.PREF_TP_DISCLAIMED;
@@ -67,6 +67,7 @@ public class EntranceActivity extends AppCompatActivity {
     private TextView selectText;
     private VersionDatabase versionTable;
     private boolean kcanotifyInstalledFlag;
+    private KenPatcher kenPatcher = new KenPatcher();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -87,6 +88,7 @@ public class EntranceActivity extends AppCompatActivity {
         BackPressCloseHandler backPressCloseHandler = new BackPressCloseHandler(this, true);
         sharedPref = getSharedPreferences(getString(R.string.preference_key), Context.MODE_PRIVATE);
         SettingsActivity.setInitialSettings(sharedPref);
+        kenPatcher.prepare(this);
 
         getOnBackPressedDispatcher().addCallback(this, backPressCloseHandler);
 
@@ -152,7 +154,7 @@ public class EntranceActivity extends AppCompatActivity {
         }
 
         KcEnUtils enUtils = new KcEnUtils();
-        if (sharedPref.getBoolean(PREF_MOD_KANTAIEN, false)) {
+        if (sharedPref.getBoolean(PREF_MOD_KCCP_LANG_PATCH, false)) {
             String availableVersion = enUtils.checkKantaiEnUpdateEntrance(this);
             if (availableVersion != null) {
                 MaterialAlertDialogBuilder alertDialogBuilder = new MaterialAlertDialogBuilder(this);
@@ -312,9 +314,12 @@ public class EntranceActivity extends AppCompatActivity {
             cache_old.delete();
         }
 
-        // clear patched cache cidr
-        String patched_cache_dir = KcUtils.getAppCacheFileDir(getApplicationContext(), "/_patched_cache/");
-        clearApplicationCache(getApplicationContext(), new File(patched_cache_dir));
+        // clear patched cache dir
+        for (KenPatcher.PatchLanguage language : KenPatcher.PatchLanguage.values()) {
+            String folderName = "/_patched_cache_" + language.name().toLowerCase();
+            String patched_cache_dir = KcUtils.getAppCacheFileDir(getApplicationContext(), folderName);
+            clearApplicationCache(getApplicationContext(), new File(patched_cache_dir));
+        }
     }
 
     private void startBrowserActivity() {

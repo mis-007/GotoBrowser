@@ -36,7 +36,13 @@ public class Constants {
     public static final String PREF_TP_DISCLAIMED = "pref_tp_disclaimed";
     public static final String PREF_LEGACY_RENDERER = "pref_legacy_renderer";
     public static final String PREF_MOD_KANTAI3D = "pref_mod_kantai3d";
-    public static final String PREF_MOD_KANTAIEN = "pref_mod_kantaien";
+    public static final String PREF_MOD_KCCP_LANG_PATCH = "pref_mod_kccp_lang_patch";
+    public static final String PREF_MOD_KCCP_LANG_PATCH_NAME = "pref_mod_kccp_lang_patch_name";
+    public static final String PREF_MOD_KCCP_LANG_PATCH_GITHUB = "pref_github_kccp";
+    public static final String PREF_MOD_KCCP_LANG_PATCH_EN = "kccp_lang_en";
+    public static final String PREF_MOD_KCCP_LANG_PATCH_ID = "kccp_lang_id";
+
+    public static final String PREF_MOD_KANTAIEN_LEGACY = "pref_mod_kantaien";
     public static final String PREF_MOD_KANTAIEN_UPDATE = "pref_mod_kantaien_update";
     public static final String PREF_MOD_KANTAIEN_DELETE = "pref_mod_kantaien_delete";
     public static final String PREF_MOD_FPS = "pref_mod_fps";
@@ -64,7 +70,8 @@ public class Constants {
             PREF_SUBTITLE_LOCALE,
             PREF_LEGACY_RENDERER,
             PREF_MOD_KANTAI3D,
-            PREF_MOD_KANTAIEN,
+            PREF_MOD_KCCP_LANG_PATCH,
+            PREF_MOD_KCCP_LANG_PATCH_NAME,
             PREF_MOD_FPS,
             PREF_MOD_CRIT,
             PREF_DEVTOOLS_DEBUG,
