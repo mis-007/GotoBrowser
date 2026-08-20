@@ -26,13 +26,27 @@ jobs:
 
           python _ggmod/Ggotobrowser_coord_mod_patch/apply_patch.py "$GITHUB_WORKSPACE"
 
-      - name: Disable Firebase for debug build
+      - name: Remove Firebase from experimental build
         run: |
           sed -i "/apply plugin: 'com.google.gms.google-services'/d" app/build.gradle
           sed -i "/apply plugin: 'com.google.firebase.crashlytics'/d" app/build.gradle
 
-          echo "=== Firebase plugins disabled ==="
-          head -n 15 app/build.gradle
+          sed -i "/com.google.firebase:firebase-crashlytics/d" app/build.gradle
+          sed -i "/com.google.firebase:firebase-analytics/d" app/build.gradle
+
+          rm -f app/google-services.json
+          rm -f app/src/debug/google-services.json
+
+          echo "===== CHECK app/build.gradle ====="
+          cat app/build.gradle
+
+          echo "===== FIREBASE CHECK ====="
+          if grep -n "firebase" app/build.gradle; then
+            echo "ERROR: Firebase entries still exist"
+            exit 1
+          else
+            echo "Firebase completely removed from experimental APK"
+          fi
 
       - name: Enable Gradle wrapper
         run: chmod +x gradlew
@@ -43,12 +57,12 @@ jobs:
 
       - name: Find generated APK
         run: |
-          echo "=== APK files ==="
+          echo "===== APK files ====="
           find app/build/outputs/apk -type f -name "*.apk" -print
 
       - name: Upload Ggotobrowser APK
         uses: actions/upload-artifact@v4
         with:
-          name: Ggotobrowser-debug-apk
+          name: Ggotobrowser-v0.2-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
