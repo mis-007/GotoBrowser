@@ -8,61 +8,47 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Java 17
+      - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Apply Ggotobrowser Mod
+      - name: Apply Ggotobrowser coordinate mod
         run: |
+          rm -rf _ggmod
+          mkdir -p _ggmod
+
           unzip -q Ggotobrowser_coord_mod_patch_v0.1.zip -d _ggmod
+
           python _ggmod/Ggotobrowser_coord_mod_patch/apply_patch.py "$GITHUB_WORKSPACE"
 
-      - name: Create debug Firebase config
+      - name: Disable Firebase for debug build
         run: |
-          cat > app/google-services.json <<'EOF'
-          {
-            "project_info": {
-              "project_number": "100000000000",
-              "project_id": "ggotobrowser-local"
-            },
-            "client": [
-              {
-                "client_info": {
-                  "mobilesdk_app_id": "1:100000000000:android:0000000000000000",
-                  "android_client_info": {
-                    "package_name": "com.antest1.gotobrowser"
-                  }
-                },
-                "oauth_client": [],
-                "api_key": [
-                  {
-                    "current_key": "LOCAL_DEBUG_BUILD"
-                  }
-                ],
-                "services": {
-                  "appinvite_service": {
-                    "other_platform_oauth_client": []
-                  }
-                }
-              }
-            ],
-            "configuration_version": "1"
-          }
-          EOF
+          sed -i "/apply plugin: 'com.google.gms.google-services'/d" app/build.gradle
+          sed -i "/apply plugin: 'com.google.firebase.crashlytics'/d" app/build.gradle
 
-      - name: Enable Gradle
+          echo "=== Firebase plugins disabled ==="
+          head -n 15 app/build.gradle
+
+      - name: Enable Gradle wrapper
         run: chmod +x gradlew
 
-      - name: Build APK
-        run: ./gradlew assembleDebug --stacktrace
+      - name: Build Ggotobrowser APK
+        run: |
+          ./gradlew clean assembleDebug --stacktrace
 
-      - name: Upload APK
+      - name: Find generated APK
+        run: |
+          echo "=== APK files ==="
+          find app/build/outputs/apk -type f -name "*.apk" -print
+
+      - name: Upload Ggotobrowser APK
         uses: actions/upload-artifact@v4
         with:
           name: Ggotobrowser-debug-apk
           path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
