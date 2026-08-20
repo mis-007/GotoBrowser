@@ -28,24 +28,62 @@ jobs:
 
       - name: Remove Firebase from experimental build
         run: |
-          sed -i "/apply plugin: 'com.google.gms.google-services'/d" app/build.gradle
-          sed -i "/apply plugin: 'com.google.firebase.crashlytics'/d" app/build.gradle
+          python3 <<'PY'
+          from pathlib import Path
 
-          sed -i "/com.google.firebase:firebase-crashlytics/d" app/build.gradle
-          sed -i "/com.google.firebase:firebase-analytics/d" app/build.gradle
+          # 1. Remove Firebase Gradle plugins and libraries
+          gradle = Path("app/build.gradle")
+          text = gradle.read_text(encoding="utf-8")
+
+          remove_lines = [
+              "apply plugin: 'com.google.gms.google-services'",
+              "apply plugin: 'com.google.firebase.crashlytics'",
+              "implementation 'com.google.firebase:firebase-crashlytics:19.4.3'",
+              "implementation 'com.google.firebase:firebase-analytics:22.4.0'",
+          ]
+
+          for line in remove_lines:
+              text = text.replace(line + "\n", "")
+
+          gradle.write_text(text, encoding="utf-8")
+
+          # 2. Remove Crashlytics references from KcUtils.java
+          kcutils = Path(
+              "app/src/main/java/com/antest1/gotobrowser/Helpers/KcUtils.java"
+          )
+          text = kcutils.read_text(encoding="utf-8")
+
+          text = text.replace(
+              "import com.google.firebase.crashlytics.FirebaseCrashlytics;\n",
+              ""
+          )
+
+          text = text.replace(
+              "    private static final FirebaseCrashlytics crashlytics = FirebaseCrashlytics.getInstance();\n",
+              ""
+          )
+
+          text = text.replace(
+              "        crashlytics.recordException(e);\n",
+              ""
+          )
+
+          kcutils.write_text(text, encoding="utf-8")
+
+          print("Firebase and Crashlytics references removed.")
+          PY
 
           rm -f app/google-services.json
           rm -f app/src/debug/google-services.json
 
-          echo "===== CHECK app/build.gradle ====="
-          cat app/build.gradle
-
-          echo "===== FIREBASE CHECK ====="
-          if grep -n "firebase" app/build.gradle; then
-            echo "ERROR: Firebase entries still exist"
+          echo "===== VERIFY FIREBASE ====="
+          if grep -R "FirebaseCrashlytics\|firebase-crashlytics\|firebase-analytics\|google-services" \
+            app/build.gradle \
+            app/src/main/java/com/antest1/gotobrowser/Helpers/KcUtils.java; then
+            echo "ERROR: Firebase references still exist"
             exit 1
           else
-            echo "Firebase completely removed from experimental APK"
+            echo "Firebase references successfully removed"
           fi
 
       - name: Enable Gradle wrapper
