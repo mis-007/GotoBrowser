@@ -1,4 +1,4 @@
-name: Build Ggotobrowser
+name: Build Ggotobrowser v0.3
 
 on:
   workflow_dispatch:
@@ -17,90 +17,54 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Apply Ggotobrowser coordinate mod
+      - name: Apply Ggotobrowser v0.3 mod
         run: |
           rm -rf _ggmod
           mkdir -p _ggmod
+          unzip -q Ggotobrowser_v0.3_patch.zip -d _ggmod
+          python _ggmod/Ggotobrowser_v0.3_patch/apply_patch.py "$GITHUB_WORKSPACE"
 
-          unzip -q Ggotobrowser_coord_mod_patch_v0.1.zip -d _ggmod
-
-          python _ggmod/Ggotobrowser_coord_mod_patch/apply_patch.py "$GITHUB_WORKSPACE"
-
-      - name: Remove Firebase from experimental build
+      - name: Remove Firebase from experimental debug build
         run: |
           python3 <<'PY'
           from pathlib import Path
 
-          # 1. Remove Firebase Gradle plugins and libraries
-          gradle = Path("app/build.gradle")
-          text = gradle.read_text(encoding="utf-8")
-
-          remove_lines = [
-              "apply plugin: 'com.google.gms.google-services'",
-              "apply plugin: 'com.google.firebase.crashlytics'",
-              "implementation 'com.google.firebase:firebase-crashlytics:19.4.3'",
-              "implementation 'com.google.firebase:firebase-analytics:22.4.0'",
-          ]
-
-          for line in remove_lines:
-              text = text.replace(line + "\n", "")
-
-          gradle.write_text(text, encoding="utf-8")
-
-          # 2. Remove Crashlytics references from KcUtils.java
-          kcutils = Path(
-              "app/src/main/java/com/antest1/gotobrowser/Helpers/KcUtils.java"
+          gradle = Path('app/build.gradle')
+          lines = gradle.read_text(encoding='utf-8').splitlines(True)
+          blocked = (
+              'com.google.gms.google-services',
+              'com.google.firebase.crashlytics',
+              'com.google.firebase:firebase-crashlytics',
+              'com.google.firebase:firebase-analytics',
           )
-          text = kcutils.read_text(encoding="utf-8")
+          gradle.write_text(''.join(x for x in lines if not any(b in x for b in blocked)), encoding='utf-8')
 
-          text = text.replace(
-              "import com.google.firebase.crashlytics.FirebaseCrashlytics;\n",
-              ""
-          )
-
-          text = text.replace(
-              "    private static final FirebaseCrashlytics crashlytics = FirebaseCrashlytics.getInstance();\n",
-              ""
-          )
-
-          text = text.replace(
-              "        crashlytics.recordException(e);\n",
-              ""
-          )
-
-          kcutils.write_text(text, encoding="utf-8")
-
-          print("Firebase and Crashlytics references removed.")
+          kcutils = Path('app/src/main/java/com/antest1/gotobrowser/Helpers/KcUtils.java')
+          lines = kcutils.read_text(encoding='utf-8').splitlines(True)
+          blocked_java = ('FirebaseCrashlytics', 'crashlytics.recordException')
+          kcutils.write_text(''.join(x for x in lines if not any(b in x for b in blocked_java)), encoding='utf-8')
           PY
 
-          rm -f app/google-services.json
-          rm -f app/src/debug/google-services.json
+          rm -f app/google-services.json app/src/debug/google-services.json
 
-          echo "===== VERIFY FIREBASE ====="
-          if grep -R "FirebaseCrashlytics\|firebase-crashlytics\|firebase-analytics\|google-services" \
-            app/build.gradle \
-            app/src/main/java/com/antest1/gotobrowser/Helpers/KcUtils.java; then
+          if grep -R "FirebaseCrashlytics\|firebase-crashlytics\|firebase-analytics\|google-services" app/build.gradle app/src/main/java; then
             echo "ERROR: Firebase references still exist"
             exit 1
-          else
-            echo "Firebase references successfully removed"
           fi
+
+      - name: Run v0.3 patch tests
+        run: |
+          python _ggmod/Ggotobrowser_v0.3_patch/tests/test_logic_v03.py
 
       - name: Enable Gradle wrapper
         run: chmod +x gradlew
 
-      - name: Build Ggotobrowser APK
-        run: |
-          ./gradlew clean assembleDebug --stacktrace
+      - name: Build Ggotobrowser v0.3 APK
+        run: ./gradlew clean assembleDebug --stacktrace
 
-      - name: Find generated APK
-        run: |
-          echo "===== APK files ====="
-          find app/build/outputs/apk -type f -name "*.apk" -print
-
-      - name: Upload Ggotobrowser APK
+      - name: Upload Ggotobrowser v0.3 APK
         uses: actions/upload-artifact@v4
         with:
-          name: Ggotobrowser-v0.2-debug-apk
+          name: Ggotobrowser-v0.3-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
