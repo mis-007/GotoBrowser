@@ -1,0 +1,87 @@
+name: Ggotobrowser Universal Source Patch Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_ref:
+        description: "Official GotoBrowser tag, e.g. v4.1 (must exist)"
+        required: true
+        default: "v4.1"
+      expected_version:
+        description: "Official APK versionName, e.g. 4.1 (must match source)"
+        required: true
+        default: "4.1"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout custom patch files
+        uses: actions/checkout@v5
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Fetch requested upstream source
+        shell: bash
+        env:
+          UPSTREAM_REF: ${{ inputs.upstream_ref }}
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$UPSTREAM_REF" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "Invalid tag/ref characters"; exit 1
+          fi
+          git clone --depth 1 --branch "$UPSTREAM_REF" \
+            https://github.com/antest1/GotoBrowser.git _official
+          echo "Official tag/ref: $UPSTREAM_REF"
+          git -C _official rev-parse HEAD
+          python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+          p=Path('_official/app/build.gradle')
+          text=p.read_text(encoding='utf8')
+          m=re.search(r'\bversionName\s+[\'\"]([^\'\"]+)[\'\"]',text)
+          actual=m.group(1) if m else ''
+          expected=os.environ['EXPECTED_VERSION']
+          print('Source versionName:',actual,'Expected official APK versionName:',expected)
+          if not actual or actual!=expected:
+              raise SystemExit('Official source and official APK version mismatch; abort.')
+          PY
+
+      - name: Apply coordinate + hack PNG visual-only patch
+        run: |
+          set -euo pipefail
+          python3 ggoto-patch/patch_source.py _official
+
+      - name: Reuse stable debug signing key when configured
+        env:
+          GGOTO_KEYSTORE_B64: ${{ secrets.GGOTO_DEBUG_KEYSTORE_B64 }}
+        shell: bash
+        run: |
+          if [ -n "$GGOTO_KEYSTORE_B64" ]; then
+            mkdir -p "$HOME/.android"
+            printf '%s' "$GGOTO_KEYSTORE_B64" | base64 --decode > "$HOME/.android/debug.keystore"
+            chmod 600 "$HOME/.android/debug.keystore"
+            echo 'Using fixed private debug keystore from GitHub Secrets.'
+          else
+            echo 'No persistent signing secret configured; successive builds may require uninstall/reinstall.'
+          fi
+
+      - name: Build debug APK
+        working-directory: _official
+        run: |
+          chmod +x gradlew
+          ./gradlew clean assembleDebug --stacktrace
+
+      - name: Upload patched debug APK artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: Ggotobrowser-visual-mod-debug
+          path: _official/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
