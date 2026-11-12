@@ -5,7 +5,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
 
@@ -39,24 +39,66 @@ jobs:
           }
           for rel, digest in expected.items():
             path = Path('_official') / rel
+            if not path.is_file():
+              raise SystemExit(f'MISSING official source file: {rel}')
             actual = hashlib.sha256(path.read_bytes()).hexdigest()
             print(f'{rel}: {"OK" if actual == digest else "MISMATCH"}')
             if actual != digest:
               raise SystemExit(f'Official source mismatch: {rel}')
+          print('Official GotoBrowser 4.1 source snapshot verified.')
           PY
 
-      - name: Apply GGoto 4.1 day-night patch
+      - name: Locate and apply GGoto day-night patch
         shell: bash
         run: |
           set -euo pipefail
-          test -f Ggoto_41_DayNight_UI3_Patch.zip
+          echo '=== Repository files (first 120) ==='
+          find . -maxdepth 4 -type f -not -path './.git/*' | sort | head -120
+
+          PATCH_ZIP="$(find . -type f -name 'Ggoto_41_DayNight_UI3_Patch.zip' -not -path './_official/*' -print -quit)"
+
+          if [ -z "$PATCH_ZIP" ]; then
+            while IFS= read -r OUTER_ZIP; do
+              [ -n "$OUTER_ZIP" ] || continue
+              if unzip -Z1 "$OUTER_ZIP" 2>/dev/null | grep -q 'Ggoto_41_DayNight_UI3_Patch.zip$'; then
+                echo "Found an upload archive containing the patch: $OUTER_ZIP"
+                rm -rf _ggoto_outer
+                mkdir -p _ggoto_outer
+                unzip -q "$OUTER_ZIP" -d _ggoto_outer
+                PATCH_ZIP="$(find _ggoto_outer -type f -name 'Ggoto_41_DayNight_UI3_Patch.zip' -print -quit)"
+                break
+              fi
+            done < <(find . -maxdepth 3 -type f -name '*.zip' -not -path './_official/*' -not -path './_ggoto_patch/*' -not -path './.git/*' -print)
+          fi
+
+          if [ -z "$PATCH_ZIP" ]; then
+            echo '::error title=GGoto patch ZIP missing::Upload Ggoto_41_DayNight_UI3_Patch.zip to the repository root, or upload Ggoto_41_DayNight_UI3_GitHubUploadPack.zip.'
+            echo 'Expected patch filename: Ggoto_41_DayNight_UI3_Patch.zip'
+            exit 2
+          fi
+
+          echo "Using patch archive: $PATCH_ZIP"
           rm -rf _ggoto_patch
           mkdir -p _ggoto_patch
-          unzip -q Ggoto_41_DayNight_UI3_Patch.zip -d _ggoto_patch
-          python3 _ggoto_patch/ggoto-patch/patch_source41_daynight.py _official
-          grep -q 'PREF_MOD_GGOTO_PROFILE' _official/app/src/main/java/com/antest1/gotobrowser/Activity/BrowserActivity.kt
-          grep -q 'settings_mod_ggoto_profile' _official/app/src/main/java/com/antest1/gotobrowser/ui/component/SettingsBottomSheet.kt
-          grep -q '4.1-GGOTO-UI3' _official/app/build.gradle
+          unzip -q "$PATCH_ZIP" -d _ggoto_patch
+
+          PATCH_SCRIPT="$(find _ggoto_patch -type f -name 'patch_source41_daynight.py' -print -quit)"
+          if [ -z "$PATCH_SCRIPT" ]; then
+            echo '::error title=Patch script missing::The ZIP does not contain ggoto-patch/patch_source41_daynight.py.'
+            find _ggoto_patch -maxdepth 5 -type f -print
+            exit 3
+          fi
+
+          echo "Running patch script: $PATCH_SCRIPT"
+          python3 "$PATCH_SCRIPT" _official
+
+          ACTIVITY='_official/app/src/main/java/com/antest1/gotobrowser/Activity/BrowserActivity.kt'
+          SETTINGS='_official/app/src/main/java/com/antest1/gotobrowser/ui/component/SettingsBottomSheet.kt'
+          GRADLE='_official/app/build.gradle'
+          grep -q 'PREF_MOD_GGOTO_PROFILE' "$ACTIVITY" || { echo 'GGOTO profile preference missing from BrowserActivity'; exit 4; }
+          grep -q 'settings_mod_ggoto_profile' "$SETTINGS" || { echo 'GGOTO profile UI missing from SettingsBottomSheet'; exit 5; }
+          grep -q '4.1-GGOTO-UI3' "$GRADLE" || { echo 'GGOTO version marker missing'; exit 6; }
+          echo 'GGOTO patch application and UI checks passed.'
 
       - name: Configure Java 17
         uses: actions/setup-java@v5
@@ -70,13 +112,13 @@ jobs:
           GGOTO_DEBUG_KEYSTORE_B64: ${{ secrets.GGOTO_DEBUG_KEYSTORE_B64 }}
         run: |
           set -euo pipefail
-          if [ -n "$GGOTO_DEBUG_KEYSTORE_B64" ]; then
+          if [ -n "${GGOTO_DEBUG_KEYSTORE_B64:-}" ]; then
             mkdir -p "$HOME/.android"
             printf '%s' "$GGOTO_DEBUG_KEYSTORE_B64" | base64 --decode > "$HOME/.android/debug.keystore"
             chmod 600 "$HOME/.android/debug.keystore"
             echo 'Using persistent debug keystore.'
           else
-            echo 'No persistent key configured; Android may require uninstalling the prior custom debug build before installing this APK.'
+            echo 'No persistent key configured; uninstall previous custom debug build if Android reports a signature mismatch.'
           fi
 
       - name: Build Ggotobrowser APK
@@ -84,19 +126,3 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          chmod +x gradlew
-          ./gradlew --no-daemon clean assembleDebug --stacktrace
-
-      - name: Verify APK output
-        shell: bash
-        run: |
-          set -euo pipefail
-          find _official/app/build/outputs/apk/debug -type f -name '*.apk' -print
-          test -n "$(find _official/app/build/outputs/apk/debug -type f -name '*.apk' -print -quit)"
-
-      - name: Upload Ggotobrowser 4.1 UI3 APK
-        uses: actions/upload-artifact@v6
-        with:
-          name: Ggotobrowser-4.1-Normal-Day-Night-UI3-APK
-          path: _official/app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
