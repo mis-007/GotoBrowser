@@ -1,17 +1,23 @@
-name: Build Ggotobrowser 4.1 (Normal-Day-Night Visual Mod)
+name: Build Ggotobrowser 4.1 (Normal-Day-Night UI3)
 
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
+    name: Build and upload GGoto APK
     runs-on: ubuntu-24.04
-    permissions:
-      contents: read
+    timeout-minutes: 45
 
     steps:
-      - name: Checkout patch files
+      - name: Checkout your patch repository
         uses: actions/checkout@v5
+        with:
+          path: _patch_repo
+          persist-credentials: false
 
       - name: Checkout verified official GotoBrowser 4.1 source
         uses: actions/checkout@v5
@@ -21,90 +27,117 @@ jobs:
           path: _official
           persist-credentials: false
 
-      - name: Verify official 4.1 source snapshot
+      - name: Print workflow and source information
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "GGOTO_WORKFLOW=4.1-DayNight-UI3-artifact-v1"
+          echo "Official repository: antest1/GotoBrowser"
+          echo "Official commit: 6e78d276f0c884e80c2a5a03a0de5973a42ae969"
+          echo "Patch repository files:"
+          find _patch_repo -maxdepth 4 -type f -not -path '*/.git/*' | sort | head -150
+
+      - name: Verify official GotoBrowser 4.1 source snapshot
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
           import hashlib
+
+          root = Path("_official")
           expected = {
-            'app/build.gradle': 'b12f67ae475a6033b9572396d6aa85b7dffbca4b164d567dea3292df6c12d90e',
-            'app/src/main/java/com/antest1/gotobrowser/Browser/ResourceProcess.java': 'ce24a99ec23445bd95e2671587e57defbf05b1bc64b8c7eaddd0519d9b177081',
-            'app/src/main/java/com/antest1/gotobrowser/Browser/KcsInterface.java': 'aaa9508ec62f2e7eb74d40c039c2a1041274a8f39e0967e1bb6d4ba629fd214a',
-            'app/src/main/java/com/antest1/gotobrowser/Helpers/KcUtils.java': 'c367148064f37eec189f8b800f62a78d7a0e78a344024e9744c40bee73620ae5',
-            'app/src/main/java/com/antest1/gotobrowser/ui/component/SettingsBottomSheet.kt': '4541f9f3b9ca3666a57fe7d77b64101c0d4c662bf38ff3472dfe210b52c53901',
-            'app/src/main/java/com/antest1/gotobrowser/Activity/BrowserActivity.kt': '6738bd45a356efed4da00b5c398e440dd6027eed99a241847c2b97d2d766907b',
-            'app/src/main/java/com/antest1/gotobrowser/Constants.java': 'cf03107b30fe355365d0574fd45a17ef340b38162dc2d23dd9770a582d8f8df8',
+              "app/build.gradle": "b12f67ae475a6033b9572396d6aa85b7dffbca4b164d567dea3292df6c12d90e",
+              "app/src/main/java/com/antest1/gotobrowser/Browser/ResourceProcess.java": "ce24a99ec23445bd95e2671587e57defbf05b1bc64b8c7eaddd0519d9b177081",
+              "app/src/main/java/com/antest1/gotobrowser/Browser/KcsInterface.java": "aaa9508ec62f2e7eb74d40c039c2a1041274a8f39e0967e1bb6d4ba629fd214a",
+              "app/src/main/java/com/antest1/gotobrowser/Helpers/KcUtils.java": "c367148064f37eec189f8b800f62a78d7a0e78a344024e9744c40bee73620ae5",
+              "app/src/main/java/com/antest1/gotobrowser/ui/component/SettingsBottomSheet.kt": "4541f9f3b9ca3666a57fe7d77b64101c0d4c662bf38ff3472dfe210b52c53901",
+              "app/src/main/java/com/antest1/gotobrowser/Activity/BrowserActivity.kt": "6738bd45a356efed4da00b5c398e440dd6027eed99a241847c2b97d2d766907b",
+              "app/src/main/java/com/antest1/gotobrowser/Constants.java": "cf03107b30fe355365d0574fd45a17ef340b38162dc2d23dd9770a582d8f8df8",
           }
+
           for rel, digest in expected.items():
-            path = Path('_official') / rel
-            if not path.is_file():
-              raise SystemExit(f'MISSING official source file: {rel}')
-            actual = hashlib.sha256(path.read_bytes()).hexdigest()
-            print(f'{rel}: {"OK" if actual == digest else "MISMATCH"}')
-            if actual != digest:
-              raise SystemExit(f'Official source mismatch: {rel}')
-          print('Official GotoBrowser 4.1 source snapshot verified.')
+              path = root / rel
+              if not path.is_file():
+                  raise SystemExit(f"::error::Missing official source file: {rel}")
+              actual = hashlib.sha256(path.read_bytes()).hexdigest()
+              print(f"{rel}: {'OK' if actual == digest else 'MISMATCH'}")
+              if actual != digest:
+                  raise SystemExit(f"::error::Official 4.1 source hash mismatch: {rel}")
+
+          print("Official GotoBrowser 4.1 source snapshot verified.")
           PY
 
-      - name: Locate and apply GGoto day-night patch
+      - name: Locate and apply GGoto Day-Night UI3 patch
         shell: bash
         run: |
           set -euo pipefail
-          echo '=== Repository files (first 120) ==='
-          find . -maxdepth 4 -type f -not -path './.git/*' | sort | head -120
 
-          PATCH_ZIP="$(find . -type f -name 'Ggoto_41_DayNight_UI3_Patch.zip' -not -path './_official/*' -print -quit)"
+          PATCH_NAME="Ggoto_41_DayNight_UI3_Patch.zip"
+          PATCH_ZIP="$(find _patch_repo -type f -name "$PATCH_NAME" -not -path '*/.git/*' -print -quit || true)"
 
+          # Also accept the complete GitHub upload pack if it contains the patch ZIP.
           if [ -z "$PATCH_ZIP" ]; then
             while IFS= read -r OUTER_ZIP; do
               [ -n "$OUTER_ZIP" ] || continue
-              if unzip -Z1 "$OUTER_ZIP" 2>/dev/null | grep -q 'Ggoto_41_DayNight_UI3_Patch.zip$'; then
-                echo "Found an upload archive containing the patch: $OUTER_ZIP"
+              unzip -Z1 "$OUTER_ZIP" > /tmp/ggoto-zip-list.txt 2>/dev/null || continue
+              if grep -Eq '(^|/)Ggoto_41_DayNight_UI3_Patch\.zip$' /tmp/ggoto-zip-list.txt; then
+                echo "Found patch ZIP inside: $OUTER_ZIP"
                 rm -rf _ggoto_outer
                 mkdir -p _ggoto_outer
                 unzip -q "$OUTER_ZIP" -d _ggoto_outer
-                PATCH_ZIP="$(find _ggoto_outer -type f -name 'Ggoto_41_DayNight_UI3_Patch.zip' -print -quit)"
+                PATCH_ZIP="$(find _ggoto_outer -type f -name "$PATCH_NAME" -print -quit || true)"
                 break
               fi
-            done < <(find . -maxdepth 3 -type f -name '*.zip' -not -path './_official/*' -not -path './_ggoto_patch/*' -not -path './.git/*' -print)
+            done < <(find _patch_repo -maxdepth 4 -type f -name '*.zip' -not -path '*/.git/*' -print)
           fi
 
           if [ -z "$PATCH_ZIP" ]; then
-            echo '::error title=GGoto patch ZIP missing::Upload Ggoto_41_DayNight_UI3_Patch.zip to the repository root, or upload Ggoto_41_DayNight_UI3_GitHubUploadPack.zip.'
-            echo 'Expected patch filename: Ggoto_41_DayNight_UI3_Patch.zip'
+            echo "::error title=GGoto patch ZIP missing::Upload Ggoto_41_DayNight_UI3_Patch.zip to the repository root, or upload the complete GitHub upload pack."
             exit 2
           fi
 
-          echo "Using patch archive: $PATCH_ZIP"
+          echo "Using patch ZIP: $PATCH_ZIP"
           rm -rf _ggoto_patch
           mkdir -p _ggoto_patch
           unzip -q "$PATCH_ZIP" -d _ggoto_patch
 
-          PATCH_SCRIPT="$(find _ggoto_patch -type f -name 'patch_source41_daynight.py' -print -quit)"
+          PATCH_SCRIPT="$(find _ggoto_patch -type f -name 'patch_source41_daynight.py' -print -quit || true)"
           if [ -z "$PATCH_SCRIPT" ]; then
-            echo '::error title=Patch script missing::The ZIP does not contain ggoto-patch/patch_source41_daynight.py.'
-            find _ggoto_patch -maxdepth 5 -type f -print
+            echo "::error title=Patch script missing::The patch ZIP does not contain patch_source41_daynight.py."
+            find _ggoto_patch -maxdepth 6 -type f -print
             exit 3
           fi
 
-          echo "Running patch script: $PATCH_SCRIPT"
-          python3 "$PATCH_SCRIPT" _official
+          echo "Applying patch script: $PATCH_SCRIPT"
+          python3 "$PATCH_SCRIPT" "$GITHUB_WORKSPACE/_official"
 
-          ACTIVITY='_official/app/src/main/java/com/antest1/gotobrowser/Activity/BrowserActivity.kt'
-          SETTINGS='_official/app/src/main/java/com/antest1/gotobrowser/ui/component/SettingsBottomSheet.kt'
-          GRADLE='_official/app/build.gradle'
-          grep -q 'PREF_MOD_GGOTO_PROFILE' "$ACTIVITY" || { echo 'GGOTO profile preference missing from BrowserActivity'; exit 4; }
-          grep -q 'settings_mod_ggoto_profile' "$SETTINGS" || { echo 'GGOTO profile UI missing from SettingsBottomSheet'; exit 5; }
-          grep -q '4.1-GGOTO-UI3' "$GRADLE" || { echo 'GGOTO version marker missing'; exit 6; }
-          echo 'GGOTO patch application and UI checks passed.'
+          ACTIVITY="_official/app/src/main/java/com/antest1/gotobrowser/Activity/BrowserActivity.kt"
+          SETTINGS="_official/app/src/main/java/com/antest1/gotobrowser/ui/component/SettingsBottomSheet.kt"
+          GRADLE="_official/app/build.gradle"
 
-      - name: Configure Java 17
+          grep -Fq "PREF_MOD_GGOTO_PROFILE" "$ACTIVITY" || {
+            echo "::error::GGoto profile preference was not added to BrowserActivity.kt"
+            exit 4
+          }
+          grep -Fq "settings_mod_ggoto_profile" "$SETTINGS" || {
+            echo "::error::GGoto settings entry was not added to SettingsBottomSheet.kt"
+            exit 5
+          }
+          grep -Fq "4.1-GGOTO-UI3" "$GRADLE" || {
+            echo "::error::GGoto version marker was not added to app/build.gradle"
+            exit 6
+          }
+
+          echo "Patch application and UI markers verified."
+
+      - name: Set up Java 17
         uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
+          cache: gradle
+          cache-dependency-path: _official/**/*.gradle*
 
       - name: Configure optional persistent debug signing key
         shell: bash
@@ -116,9 +149,10 @@ jobs:
             mkdir -p "$HOME/.android"
             printf '%s' "$GGOTO_DEBUG_KEYSTORE_B64" | base64 --decode > "$HOME/.android/debug.keystore"
             chmod 600 "$HOME/.android/debug.keystore"
-            echo 'Using persistent debug keystore.'
+            echo "Using persistent debug signing key."
           else
-            echo 'No persistent key configured; uninstall previous custom debug build if Android reports a signature mismatch.'
+            echo "No persistent debug key configured."
+            echo "If Android reports a signature mismatch, uninstall the previous custom debug APK before installing this one."
           fi
 
       - name: Build Ggotobrowser APK
@@ -126,3 +160,50 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          chmod +x ./gradlew
+          echo "Starting full Android debug build..."
+          ./gradlew --no-daemon clean assembleDebug --stacktrace
+          echo "Gradle assembleDebug completed."
+
+      - name: Verify APK output
+        id: verify_apk
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK_DIR="_official/app/build/outputs/apk/debug"
+          echo "Searching for APK files in: $APK_DIR"
+
+          if [ ! -d "$APK_DIR" ]; then
+            echo "::error title=APK output directory missing::Gradle did not create app/build/outputs/apk/debug."
+            echo "Available build output directories:"
+            find _official/app/build/outputs -maxdepth 5 -type d -print 2>/dev/null || true
+            exit 7
+          fi
+
+          find "$APK_DIR" -type f -name '*.apk' -print
+          APK_FILE="$(find "$APK_DIR" -type f -name '*.apk' -print -quit)"
+
+          if [ -z "$APK_FILE" ]; then
+            echo "::error title=APK not generated::No APK file was found after assembleDebug."
+            exit 8
+          fi
+
+          echo "APK_FILE=$APK_FILE" >> "$GITHUB_OUTPUT"
+          echo "APK ready: $APK_FILE"
+          echo "APK size: $(du -h "$APK_FILE" | cut -f1)"
+          {
+            echo "## GGoto build result"
+            echo ""
+            echo "- Source: GotoBrowser 4.1"
+            echo "- Source commit: 6e78d276f0c884e80c2a5a03a0de5973a42ae969"
+            echo "- APK: $APK_FILE"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Ggotobrowser APK
+        uses: actions/upload-artifact@v6
+        with:
+          name: Ggotobrowser-4.1-DayNight-UI3-APK
+          path: _official/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
