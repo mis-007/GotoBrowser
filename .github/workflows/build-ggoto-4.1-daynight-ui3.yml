@@ -1,0 +1,102 @@
+name: Build Ggotobrowser 4.1 (Normal-Day-Night Visual Mod)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout patch files
+        uses: actions/checkout@v5
+
+      - name: Checkout verified official GotoBrowser 4.1 source
+        uses: actions/checkout@v5
+        with:
+          repository: antest1/GotoBrowser
+          ref: 6e78d276f0c884e80c2a5a03a0de5973a42ae969
+          path: _official
+          persist-credentials: false
+
+      - name: Verify official 4.1 source snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          expected = {
+            'app/build.gradle': 'b12f67ae475a6033b9572396d6aa85b7dffbca4b164d567dea3292df6c12d90e',
+            'app/src/main/java/com/antest1/gotobrowser/Browser/ResourceProcess.java': 'ce24a99ec23445bd95e2671587e57defbf05b1bc64b8c7eaddd0519d9b177081',
+            'app/src/main/java/com/antest1/gotobrowser/Browser/KcsInterface.java': 'aaa9508ec62f2e7eb74d40c039c2a1041274a8f39e0967e1bb6d4ba629fd214a',
+            'app/src/main/java/com/antest1/gotobrowser/Helpers/KcUtils.java': 'c367148064f37eec189f8b800f62a78d7a0e78a344024e9744c40bee73620ae5',
+            'app/src/main/java/com/antest1/gotobrowser/ui/component/SettingsBottomSheet.kt': '4541f9f3b9ca3666a57fe7d77b64101c0d4c662bf38ff3472dfe210b52c53901',
+            'app/src/main/java/com/antest1/gotobrowser/Activity/BrowserActivity.kt': '6738bd45a356efed4da00b5c398e440dd6027eed99a241847c2b97d2d766907b',
+            'app/src/main/java/com/antest1/gotobrowser/Constants.java': 'cf03107b30fe355365d0574fd45a17ef340b38162dc2d23dd9770a582d8f8df8',
+          }
+          for rel, digest in expected.items():
+            path = Path('_official') / rel
+            actual = hashlib.sha256(path.read_bytes()).hexdigest()
+            print(f'{rel}: {"OK" if actual == digest else "MISMATCH"}')
+            if actual != digest:
+              raise SystemExit(f'Official source mismatch: {rel}')
+          PY
+
+      - name: Apply GGoto 4.1 day-night patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f Ggoto_41_DayNight_UI3_Patch.zip
+          rm -rf _ggoto_patch
+          mkdir -p _ggoto_patch
+          unzip -q Ggoto_41_DayNight_UI3_Patch.zip -d _ggoto_patch
+          python3 _ggoto_patch/ggoto-patch/patch_source41_daynight.py _official
+          grep -q 'PREF_MOD_GGOTO_PROFILE' _official/app/src/main/java/com/antest1/gotobrowser/Activity/BrowserActivity.kt
+          grep -q 'settings_mod_ggoto_profile' _official/app/src/main/java/com/antest1/gotobrowser/ui/component/SettingsBottomSheet.kt
+          grep -q '4.1-GGOTO-UI3' _official/app/build.gradle
+
+      - name: Configure Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Configure optional persistent debug signing key
+        shell: bash
+        env:
+          GGOTO_DEBUG_KEYSTORE_B64: ${{ secrets.GGOTO_DEBUG_KEYSTORE_B64 }}
+        run: |
+          set -euo pipefail
+          if [ -n "$GGOTO_DEBUG_KEYSTORE_B64" ]; then
+            mkdir -p "$HOME/.android"
+            printf '%s' "$GGOTO_DEBUG_KEYSTORE_B64" | base64 --decode > "$HOME/.android/debug.keystore"
+            chmod 600 "$HOME/.android/debug.keystore"
+            echo 'Using persistent debug keystore.'
+          else
+            echo 'No persistent key configured; Android may require uninstalling the prior custom debug build before installing this APK.'
+          fi
+
+      - name: Build Ggotobrowser APK
+        working-directory: _official
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew --no-daemon clean assembleDebug --stacktrace
+
+      - name: Verify APK output
+        shell: bash
+        run: |
+          set -euo pipefail
+          find _official/app/build/outputs/apk/debug -type f -name '*.apk' -print
+          test -n "$(find _official/app/build/outputs/apk/debug -type f -name '*.apk' -print -quit)"
+
+      - name: Upload Ggotobrowser 4.1 UI3 APK
+        uses: actions/upload-artifact@v6
+        with:
+          name: Ggotobrowser-4.1-Normal-Day-Night-UI3-APK
+          path: _official/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
