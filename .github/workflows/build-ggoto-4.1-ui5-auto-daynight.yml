@@ -1,4 +1,4 @@
-name: Build Ggotobrowser 4.1 (UI5.1 Upgrade Install + Auto Day Night)
+name: Build Ggotobrowser 4.1 (UI5 Auto Day Night + ZIP Import)
 
 on:
   workflow_dispatch:
@@ -31,7 +31,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "GGOTO_WORKFLOW=4.1-UI5.1-upgrade-signing-v1"
+          echo "GGOTO_WORKFLOW=4.1-UI5-auto-daynight-v1"
           echo "Official repository: antest1/GotoBrowser"
           echo "Official commit: 6e78d276f0c884e80c2a5a03a0de5973a42ae969"
           echo "Patch repository files:"
@@ -81,7 +81,7 @@ jobs:
             while IFS= read -r OUTER_ZIP; do
               [ -n "$OUTER_ZIP" ] || continue
               unzip -Z1 "$OUTER_ZIP" > /tmp/ggoto-zip-list.txt 2>/dev/null || continue
-              if grep -Eq '(^|/)Ggoto_41_UI5_AutoDayNight_Patch\.zip$' /tmp/ggoto-zip-list.txt; then
+              if grep -Eq '(^|/)Ggoto_41_DayNight_OneClickImport_UI4_Patch\.zip$' /tmp/ggoto-zip-list.txt; then
                 echo "Found patch ZIP inside: $OUTER_ZIP"
                 rm -rf _ggoto_outer
                 mkdir -p _ggoto_outer
@@ -154,61 +154,6 @@ jobs:
 
           echo "UI5 timetable, port-return hook, importer, and all three import actions verified."
 
-      - name: Set unique upgrade version code (keep app package ID)
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PYVERSION'
-          from pathlib import Path
-          import os
-          import re
-
-          gradle = Path('_official/app/build.gradle')
-          text = gradle.read_text(encoding='utf-8')
-          run_number = int(os.environ['GITHUB_RUN_NUMBER'])
-          run_attempt = int(os.environ['GITHUB_RUN_ATTEMPT'])
-          # Stable and increasing per workflow run/retry. Greater than old 4.1 (94).
-          version_code = 2000000 + run_number * 100 + run_attempt
-          if version_code > 2100000000:
-              raise SystemExit('::error::versionCode exceeded Android-safe range')
-
-          if 'applicationId "com.antest1.gotobrowser"' not in text:
-              raise SystemExit('::error::Application ID changed! Refusing update build')
-          text, c1 = re.subn(r'(?m)^(\s*)versionCode\s+\d+\s*$',
-                             lambda m: f'{m.group(1)}versionCode {version_code}', text)
-          text, c2 = re.subn(r'(?m)^(\s*)versionName\s+"4\.1-GGOTO-UI5"\s*$',
-                             lambda m: f'{m.group(1)}versionName "4.1-GGOTO-UI5.1.{version_code}"', text)
-          if c1 != 1 or c2 != 1:
-              raise SystemExit(f'::error::Version fields mismatched: versionCode={c1}, versionName={c2}')
-
-          # Use exactly the original key (stored as a GitHub secret) to sign debug.
-          # The default Android debug alias and passwords are supported, as are
-          # custom alias/password secrets if the installed version used them.
-          text += """
-
-          // GGOTO-UI5.1: stable upgrade signing; never change the package ID.
-          android {
-              signingConfigs {
-                  ggotoExistingKey {
-                      storeFile file(System.getenv('GGOTO_SIGNING_FILE'))
-                      storePassword (System.getenv('GGOTO_KEYSTORE_PASSWORD') ?: 'android')
-                      keyAlias (System.getenv('GGOTO_KEY_ALIAS') ?: 'androiddebugkey')
-                      keyPassword (System.getenv('GGOTO_KEY_PASSWORD') ?: 'android')
-                  }
-              }
-              buildTypes {
-                  debug {
-                      signingConfig signingConfigs.ggotoExistingKey
-                  }
-              }
-          }
-          """
-          gradle.write_text(text, encoding='utf-8')
-          print('Application ID : com.antest1.gotobrowser (unchanged)')
-          print('versionCode    :', version_code)
-          print('versionName    :', f'4.1-GGOTO-UI5.1.{version_code}')
-          PYVERSION
-
       - name: Set up Java 17
         uses: actions/setup-java@v5
         with:
@@ -217,57 +162,35 @@ jobs:
           cache: gradle
           cache-dependency-path: _official/**/*.gradle*
 
-      - name: Require your existing APK signing certificate (for overwrite installation)
+      - name: Configure optional persistent debug signing key
         shell: bash
         env:
           GGOTO_DEBUG_KEYSTORE_B64: ${{ secrets.GGOTO_DEBUG_KEYSTORE_B64 }}
-          GGOTO_KEYSTORE_PASSWORD: ${{ secrets.GGOTO_KEYSTORE_PASSWORD }}
-          GGOTO_KEY_ALIAS: ${{ secrets.GGOTO_KEY_ALIAS }}
         run: |
           set -euo pipefail
-          if [ -z "${GGOTO_DEBUG_KEYSTORE_B64:-}" ]; then
-            echo '::error title=Original signing key required::To overwrite an existing Android APK, upload its ORIGINAL keystore as GitHub Actions repository secret GGOTO_DEBUG_KEYSTORE_B64 (base64). A new key or a generated debug key cannot update an APK signed by another key.'
-            echo 'If the original private key is unrecoverable, you must uninstall the old app once (back up your data first); future updates can then reuse a persistent key.'
-            exit 20
+          if [ -n "${GGOTO_DEBUG_KEYSTORE_B64:-}" ]; then
+            mkdir -p "$HOME/.android"
+            printf '%s' "$GGOTO_DEBUG_KEYSTORE_B64" | base64 --decode > "$HOME/.android/debug.keystore"
+            chmod 600 "$HOME/.android/debug.keystore"
+            echo "Using persistent debug signing key."
+          else
+            echo "No persistent debug key configured."
+            echo "If Android reports a signature mismatch, uninstall the previous custom debug APK before installing this one."
           fi
-
-          mkdir -p "$RUNNER_TEMP/ggoto-signing"
-          KEY_FILE="$RUNNER_TEMP/ggoto-signing/original-key.jks"
-          printf '%s' "$GGOTO_DEBUG_KEYSTORE_B64" | base64 --decode > "$KEY_FILE"
-          chmod 600 "$KEY_FILE"
-          if [ ! -s "$KEY_FILE" ]; then
-            echo '::error::Keystore secret decoded to an empty file.'
-            exit 21
-          fi
-          KEYSTORE_PASSWORD="${GGOTO_KEYSTORE_PASSWORD:-android}"
-          KEY_ALIAS="${GGOTO_KEY_ALIAS:-androiddebugkey}"
-          if ! keytool -list -keystore "$KEY_FILE" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" > /dev/null 2>&1; then
-            echo '::error::Cannot open original keystore or locate alias. Check GGOTO_KEYSTORE_PASSWORD and GGOTO_KEY_ALIAS repository secrets.'
-            exit 22
-          fi
-          echo "GGOTO_SIGNING_FILE=$KEY_FILE" >> "$GITHUB_ENV"
-          echo 'Existing signing keystore verified. No new signing key generated.'
 
       - name: Build Ggotobrowser APK
         working-directory: _official
         shell: bash
-        env:
-          GGOTO_KEYSTORE_PASSWORD: ${{ secrets.GGOTO_KEYSTORE_PASSWORD }}
-          GGOTO_KEY_ALIAS: ${{ secrets.GGOTO_KEY_ALIAS }}
-          GGOTO_KEY_PASSWORD: ${{ secrets.GGOTO_KEY_PASSWORD }}
         run: |
           set -euo pipefail
           chmod +x ./gradlew
-          echo "Starting full Android debug build with original signing key..."
+          echo "Starting full Android debug build..."
           ./gradlew --no-daemon clean assembleDebug --stacktrace
           echo "Gradle assembleDebug completed."
 
       - name: Verify APK output
         id: verify_apk
         shell: bash
-        env:
-          GGOTO_KEYSTORE_PASSWORD: ${{ secrets.GGOTO_KEYSTORE_PASSWORD }}
-          GGOTO_KEY_ALIAS: ${{ secrets.GGOTO_KEY_ALIAS }}
         run: |
           set -euo pipefail
           APK_DIR="_official/app/build/outputs/apk/debug"
@@ -291,32 +214,6 @@ jobs:
           echo "APK_FILE=$APK_FILE" >> "$GITHUB_OUTPUT"
           echo "APK ready: $APK_FILE"
           echo "APK size: $(du -h "$APK_FILE" | cut -f1)"
-          if [ -n "${ANDROID_HOME:-}" ]; then
-            APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner -print 2>/dev/null | sort -V | tail -1 || true)"
-            AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt -print 2>/dev/null | sort -V | tail -1 || true)"
-            if [ -n "$APKSIGNER" ]; then
-              "$APKSIGNER" verify --print-certs "$APK_FILE"
-              if [ -n "${GGOTO_SIGNING_FILE:-}" ] && [ -f "$GGOTO_SIGNING_FILE" ]; then
-                EXPECTED_CERT_SHA="$(keytool -exportcert -keystore "$GGOTO_SIGNING_FILE" -storepass "${GGOTO_KEYSTORE_PASSWORD:-android}" -alias "${GGOTO_KEY_ALIAS:-androiddebugkey}" | sha256sum | awk '{print $1}')"
-                ACTUAL_CERT_SHA="$("$APKSIGNER" verify --print-certs "$APK_FILE" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr '[:upper:]' '[:lower:]')"
-                if [ -z "$ACTUAL_CERT_SHA" ] || [ "$EXPECTED_CERT_SHA" != "$ACTUAL_CERT_SHA" ]; then
-                  echo '::error::APK signature does not match the signing key supplied via GGOTO_DEBUG_KEYSTORE_B64.'
-                  exit 24
-                fi
-                echo 'APK signing certificate matches the supplied original keystore.'
-              fi
-            else
-              echo 'Android apksigner was not found; Gradle already signed the debug output.'
-            fi
-            if [ -n "$AAPT" ]; then
-              BADGING="$("$AAPT" dump badging "$APK_FILE")"
-              echo "$BADGING" | grep '^package:'
-              echo "$BADGING" | grep -q "package: name='com.antest1.gotobrowser'" || {
-                echo '::error::APK package ID changed; cannot upgrade existing app.'
-                exit 23
-              }
-            fi
-          fi
           {
             echo "## GGoto build result"
             echo ""
@@ -328,7 +225,7 @@ jobs:
       - name: Upload Ggotobrowser APK
         uses: actions/upload-artifact@v6
         with:
-          name: Ggotobrowser-4.1-UI5.1-UpgradeInstall-APK
+          name: Ggotobrowser-4.1-UI5-AutoDayNight-APK
           path: _official/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           compression-level: 0
