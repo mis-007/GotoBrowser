@@ -1,616 +1,335 @@
-using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Drawing;
-using System.Globalization;
-using System.IO;
-using System.Linq;
-using System.Text;
-using System.Text.Json;
-using System.Text.RegularExpressions;
-using System.Threading;
-using System.Threading.Tasks;
-using System.Windows.Forms;
-using ExcelDataReader;
-using OpenQA.Selenium;
-using OpenQA.Selenium.Chrome;
+name: Build Ggotobrowser 4.1 (UI5.1 Upgrade Install + Auto Day Night)
 
-namespace AccidentReporter;
+on:
+  workflow_dispatch:
 
-internal static class Program
-{
-    [STAThread]
-    private static void Main()
-    {
-        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
-        Application.SetHighDpiMode(HighDpiMode.SystemAware);
-        Application.EnableVisualStyles();
-        Application.SetCompatibleTextRenderingDefault(false);
-        Application.Run(new MainForm());
-    }
-}
+permissions:
+  contents: read
 
-internal readonly struct ReportValue
-{
-    public readonly decimal Number;
-    public readonly string Unit;
+jobs:
+  build:
+    name: Build and upload GGoto APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
 
-    public ReportValue(decimal number, string unit = "")
-    {
-        Number = number;
-        Unit = unit;
-    }
-}
+    steps:
+      - name: Checkout your patch repository
+        uses: actions/checkout@v5
+        with:
+          path: _patch_repo
+          persist-credentials: false
 
-internal sealed class ReportConfig
-{
-    public string SheetName { get; private set; } = "事故";
-    public Dictionary<string, string> Cells { get; } = new(StringComparer.Ordinal);
-    public List<List<string>> Templates { get; } = new();
-    public static string ConfigPath => Path.Combine(AppContext.BaseDirectory, "config.json");
+      - name: Checkout verified official GotoBrowser 4.1 source
+        uses: actions/checkout@v5
+        with:
+          repository: antest1/GotoBrowser
+          ref: 6e78d276f0c884e80c2a5a03a0de5973a42ae969
+          path: _official
+          persist-credentials: false
 
-    public static ReportConfig Load()
-    {
-        if (!File.Exists(ConfigPath))
-            throw new FileNotFoundException("缺少 config.json，请将它放在 EXE 同一目录。", ConfigPath);
-        try
-        {
-            using var doc = JsonDocument.Parse(File.ReadAllText(ConfigPath, Encoding.UTF8),
-                new JsonDocumentOptions { AllowTrailingCommas = true });
-            var root = doc.RootElement;
-            if (!root.TryGetProperty("cellMap", out var map) || map.ValueKind != JsonValueKind.Object)
-                throw new InvalidDataException("config.json 缺少 cellMap 单元格映射对象。");
-            if (!root.TryGetProperty("templates", out var templates) || templates.ValueKind != JsonValueKind.Array)
-                throw new InvalidDataException("config.json 缺少 templates 范文数组。");
+      - name: Print workflow and source information
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "GGOTO_WORKFLOW=4.1-UI5.1-upgrade-signing-v1"
+          echo "Official repository: antest1/GotoBrowser"
+          echo "Official commit: 6e78d276f0c884e80c2a5a03a0de5973a42ae969"
+          echo "Patch repository files:"
+          find _patch_repo -maxdepth 4 -type f -not -path '*/.git/*' | sort | head -150
 
-            var config = new ReportConfig();
-            // Keep supporting existing V2 config.json files that omit sheetName.
-            if (root.TryGetProperty("sheetName", out var sheetName))
-            {
-                if (sheetName.ValueKind != JsonValueKind.String ||
-                    string.IsNullOrWhiteSpace(sheetName.GetString()))
-                    throw new InvalidDataException("config.json 的 sheetName 必须填写非空工作表名称，例如 \"事故\"。");
-                config.SheetName = sheetName.GetString()!.Trim();
-            }
-            foreach (var item in map.EnumerateObject())
-            {
-                if (item.Value.ValueKind != JsonValueKind.String)
-                    throw new InvalidDataException($"变量 {item.Name} 的单元格位置必须是字符串，如 B3。");
-                string address = (item.Value.GetString() ?? "").Trim().ToUpperInvariant();
-                if (!Regex.IsMatch(address, @"^[A-Z]{1,3}[1-9][0-9]*$"))
-                    throw new InvalidDataException($"变量 {item.Name} 的单元格地址无效：{address}");
-                config.Cells.Add(item.Name.Trim(), address);
-            }
-            if (config.Cells.Count == 0) throw new InvalidDataException("cellMap 不能为空。");
+      - name: Verify official GotoBrowser 4.1 source snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
 
-            foreach (var section in templates.EnumerateArray())
-            {
-                if (section.ValueKind != JsonValueKind.Object ||
-                    !section.TryGetProperty("lines", out var lines) || lines.ValueKind != JsonValueKind.Array)
-                    throw new InvalidDataException("每套范文都必须包含 lines 文本行数组。");
-                var sectionLines = new List<string>();
-                foreach (var line in lines.EnumerateArray())
-                {
-                    if (line.ValueKind != JsonValueKind.String)
-                        throw new InvalidDataException("范文 lines 中每一行都必须加双引号。");
-                    sectionLines.Add(line.GetString() ?? "");
-                }
-                if (sectionLines.Count == 0) throw new InvalidDataException("范文 lines 不能为空。");
-                config.Templates.Add(sectionLines);
-            }
-            if (config.Templates.Count == 0) throw new InvalidDataException("至少需要一套范文。");
-            return config;
-        }
-        catch (JsonException e)
-        {
-            throw new InvalidDataException("config.json 格式有误，请检查逗号、引号及括号：" + e.Message, e);
-        }
-    }
-}
+          root = Path("_official")
+          expected = {
+              "app/build.gradle": "b12f67ae475a6033b9572396d6aa85b7dffbca4b164d567dea3292df6c12d90e",
+              "app/src/main/java/com/antest1/gotobrowser/Browser/ResourceProcess.java": "ce24a99ec23445bd95e2671587e57defbf05b1bc64b8c7eaddd0519d9b177081",
+              "app/src/main/java/com/antest1/gotobrowser/Browser/KcsInterface.java": "aaa9508ec62f2e7eb74d40c039c2a1041274a8f39e0967e1bb6d4ba629fd214a",
+              "app/src/main/java/com/antest1/gotobrowser/Helpers/KcUtils.java": "c367148064f37eec189f8b800f62a78d7a0e78a344024e9744c40bee73620ae5",
+              "app/src/main/java/com/antest1/gotobrowser/ui/component/SettingsBottomSheet.kt": "4541f9f3b9ca3666a57fe7d77b64101c0d4c662bf38ff3472dfe210b52c53901",
+              "app/src/main/java/com/antest1/gotobrowser/Activity/BrowserActivity.kt": "6738bd45a356efed4da00b5c398e440dd6027eed99a241847c2b97d2d766907b",
+              "app/src/main/java/com/antest1/gotobrowser/Constants.java": "cf03107b30fe355365d0574fd45a17ef340b38162dc2d23dd9770a582d8f8df8",
+          }
 
-internal static class ReportBuilder
-{
+          for rel, digest in expected.items():
+              path = root / rel
+              if not path.is_file():
+                  raise SystemExit(f"::error::Missing official source file: {rel}")
+              actual = hashlib.sha256(path.read_bytes()).hexdigest()
+              print(f"{rel}: {'OK' if actual == digest else 'MISMATCH'}")
+              if actual != digest:
+                  raise SystemExit(f"::error::Official 4.1 source hash mismatch: {rel}")
 
-    private static readonly Regex DatePattern = new(@"(\d{4})年(\d{1,2})月(\d{1,2})日", RegexOptions.Compiled);
-    private static readonly Regex AddressPattern = new(@"^([A-Z]+)(\d+)$", RegexOptions.Compiled);
-    private static readonly Regex TokenPattern = new(@"\{([^{}\r\n]+)\}", RegexOptions.Compiled);
+          print("Official GotoBrowser 4.1 source snapshot verified.")
+          PY
 
-    public static string Generate(string path)
-    {
-        var matches = DatePattern.Matches(Path.GetFileNameWithoutExtension(path));
-        if (matches.Count < 2)
-            throw new InvalidDataException("文件名需要包含时间区间，如(2026年07月01日-2026年10月20日)。");
+      - name: Locate and apply GGoto UI5 auto day-night and import patch
+        shell: bash
+        run: |
+          set -euo pipefail
 
-        DateTime ParseDate(Match m) => new(
-            int.Parse(m.Groups[1].Value), int.Parse(m.Groups[2].Value), int.Parse(m.Groups[3].Value));
-        var begin = ParseDate(matches[matches.Count - 2]);
-        var end = ParseDate(matches[matches.Count - 1]);
-        if (begin > end) throw new InvalidDataException("文件名的起始日期晚于截止日期。");
+          PATCH_NAME="Ggoto_41_UI5_AutoDayNight_Patch.zip"
+          PATCH_ZIP="$(find _patch_repo -type f -name "$PATCH_NAME" -not -path '*/.git/*' -print -quit || true)"
 
-        var config = ReportConfig.Load();
-        var values = ReadValues(path, config)!;
-        ReportValue Get(string key)
-        {
-            if (values!.TryGetValue(key, out var value)) return value;
-            throw new InvalidDataException($"范文引用了变量 {key}，但 config.json 的 cellMap 未定义。");
-        }
-        string Count(string key)
-        {
-            var value = Get(key);
-            if (value.Unit.Length > 0) throw new InvalidDataException($"{key} 是百分数，不能用于事故数量。");
-            return Format(value.Number);
-        }
-        string Trend(string key, bool yearOnYear = true) => TrendNumber(Get(key), yearOnYear ? "同比" : "");
-        string Compare(string current, string previous, string unit = "")
-        {
-            var a = Get(current);
-            var b = Get(previous);
-            if (a.Unit != b.Unit) throw new InvalidDataException($"{current}、{previous} 单位不一致。");
-            return TrendNumber(new ReportValue(a.Number - b.Number, a.Unit == "%" ? "个百分点" : unit), "同比");
-        }
+          # Also accept the complete GitHub upload pack if it contains the patch ZIP.
+          if [ -z "$PATCH_ZIP" ]; then
+            while IFS= read -r OUTER_ZIP; do
+              [ -n "$OUTER_ZIP" ] || continue
+              unzip -Z1 "$OUTER_ZIP" > /tmp/ggoto-zip-list.txt 2>/dev/null || continue
+              if grep -Eq '(^|/)Ggoto_41_UI5_AutoDayNight_Patch\.zip$' /tmp/ggoto-zip-list.txt; then
+                echo "Found patch ZIP inside: $OUTER_ZIP"
+                rm -rf _ggoto_outer
+                mkdir -p _ggoto_outer
+                unzip -q "$OUTER_ZIP" -d _ggoto_outer
+                PATCH_ZIP="$(find _ggoto_outer -type f -name "$PATCH_NAME" -print -quit || true)"
+                break
+              fi
+            done < <(find _patch_repo -maxdepth 4 -type f -name '*.zip' -not -path '*/.git/*' -print)
+          fi
 
-        string ReplaceToken(Match match)
-        {
-            string token = match.Groups[1].Value.Trim();
-            return token switch
-            {
-                "起始月" => begin.Month.ToString(),
-                "截止月" => end.Month.ToString(),
-                "截止日" => end.Day.ToString(),
-                "截至日期" => $"{end.Month}月{end.Day}日",
-                _ when token.StartsWith("同比:", StringComparison.Ordinal) => Trend(token[3..]),
-                _ when token.StartsWith("趋势:", StringComparison.Ordinal) => Trend(token[3..], false),
-                _ when token.StartsWith("差额:", StringComparison.Ordinal) => ResolveDifference(token[3..]),
-                _ => Count(token)
-            };
-        }
+          if [ -z "$PATCH_ZIP" ]; then
+            echo "::error title=GGoto patch ZIP missing::Upload Ggoto_41_UI5_AutoDayNight_Patch.zip to the repository root, or upload the complete GitHub upload pack."
+            exit 2
+          fi
 
-        string ResolveDifference(string expression)
-        {
-            var tokens = expression.Split(':');
-            var operands = tokens[0].Split('-');
-            if (tokens.Length > 2 || operands.Length != 2 ||
-                string.IsNullOrWhiteSpace(operands[0]) || string.IsNullOrWhiteSpace(operands[1]))
-                throw new InvalidDataException("差额占位符格式应为 {差额:A1-C1:起}。当前是 " + expression);
-            return Compare(operands[0], operands[1], tokens.Length == 2 ? tokens[1] : "");
-        }
+          echo "Using patch ZIP: $PATCH_ZIP"
+          rm -rf _ggoto_patch
+          mkdir -p _ggoto_patch
+          unzip -q "$PATCH_ZIP" -d _ggoto_patch
 
-        return string.Join("\r\n\r\n", config.Templates.Select(section =>
-            string.Join("\r\n", section.Select(line => TokenPattern.Replace(line, ReplaceToken)))));
-    }
+          PATCH_SCRIPT="$(find _ggoto_patch -type f -name 'patch_source41_daynight.py' -print -quit || true)"
+          if [ -z "$PATCH_SCRIPT" ]; then
+            echo "::error title=Patch script missing::The patch ZIP does not contain patch_source41_daynight.py."
+            find _ggoto_patch -maxdepth 6 -type f -print
+            exit 3
+          fi
 
-    private static string Format(decimal number) => number.ToString("0.############################", CultureInfo.InvariantCulture);
+          echo "Applying patch script: $PATCH_SCRIPT"
+          python3 "$PATCH_SCRIPT" "$GITHUB_WORKSPACE/_official"
 
-    private static string TrendNumber(ReportValue value, string prefix)
-    {
-        if (value.Number == 0) return prefix + "持平";
-        return prefix + (value.Number < 0 ? "下降" : "上升") + Format(Math.Abs(value.Number)) + value.Unit;
-    }
+          ACTIVITY="_official/app/src/main/java/com/antest1/gotobrowser/Activity/BrowserActivity.kt"
+          SETTINGS="_official/app/src/main/java/com/antest1/gotobrowser/ui/component/SettingsBottomSheet.kt"
+          GRADLE="_official/app/build.gradle"
 
-    private static (int Row, int Column) Address(string address)
-    {
-        var m = AddressPattern.Match(address);
-        if (!m.Success) throw new ArgumentException("单元格地址无效：" + address);
-        int c = 0;
-        foreach (var letter in m.Groups[1].Value) c = c * 26 + (letter - 'A' + 1);
-        return (int.Parse(m.Groups[2].Value) - 1, c - 1);
-    }
+          grep -Fq "PREF_MOD_GGOTO_PROFILE" "$ACTIVITY" || {
+            echo "::error::GGoto profile preference was not added to BrowserActivity.kt"
+            exit 4
+          }
+          grep -Fq "settings_mod_ggoto_profile" "$SETTINGS" || {
+            echo "::error::GGoto profile selector was not added to SettingsBottomSheet.kt"
+            exit 5
+          }
+          grep -Fq "settings_mod_ggoto_import_normal" "$SETTINGS" || {
+            echo "::error::GGoto normal ZIP import action is missing"
+            exit 6
+          }
+          grep -Fq "settings_mod_ggoto_import_day" "$SETTINGS" || {
+            echo "::error::GGoto day ZIP import action is missing"
+            exit 7
+          }
+          grep -Fq "settings_mod_ggoto_import_night" "$SETTINGS" || {
+            echo "::error::GGoto night ZIP import action is missing"
+            exit 8
+          }
+          test -f "_official/app/src/main/java/com/antest1/gotobrowser/Helpers/GGotoModImporter.java" || {
+            echo "::error::GGotoModImporter.java was not installed"
+            exit 9
+          }
+          POLICY="_official/app/src/main/java/com/antest1/gotobrowser/Helpers/GGotoDayNightPolicy.java"
+          KCS="_official/app/src/main/java/com/antest1/gotobrowser/Browser/KcsInterface.java"
+          test -f "$POLICY" || { echo "::error::GGotoDayNightPolicy.java missing"; exit 11; }
+          grep -Fq "onPort(activity)" "$KCS" || { echo "::error::Port-return hook missing"; exit 12; }
+          grep -Fq "TimePickerDialog" "$SETTINGS" || { echo "::error::Time picker UI missing"; exit 13; }
+          grep -Fq "settings_mod_ggoto_day_start" "$SETTINGS" || { echo "::error::Day start setting missing"; exit 14; }
+          grep -Fq "settings_mod_ggoto_night_start" "$SETTINGS" || { echo "::error::Night start setting missing"; exit 15; }
+          grep -Fq "4.1-GGOTO-UI5" "$GRADLE" || {
+            echo "::error::GGoto UI5 version marker was not added to app/build.gradle"
+            exit 10
+          }
 
-    private static Dictionary<string, ReportValue> ReadValues(string path, ReportConfig config)
-    {
-        var cells = config.Cells;
-        var extension = Path.GetExtension(path).ToLowerInvariant();
-        var result = extension switch
-        {
-            ".xls" or ".xlsx" => ReadExcel(path, cells, config.SheetName),
-            ".csv" => ReadCsv(path, cells),
-            _ => throw new InvalidDataException("只能选择 XLS、XLSX 或 CSV。")
-        };
-        foreach (var pair in cells)
-            if (!result.ContainsKey(pair.Key))
-                throw new InvalidDataException($"单元格 {pair.Value}（变量 {pair.Key}）为空或超出表格范围。");
-        return result;
-    }
+          echo "UI5 timetable, port-return hook, importer, and all three import actions verified."
 
-    private static Dictionary<string, ReportValue> ReadExcel(string path, Dictionary<string, string> cells, string sheetName)
-    {
-        using var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        using var reader = ExcelReaderFactory.CreateReader(stream);
-        do
-        {
-            if (!string.Equals(reader.Name, sheetName, StringComparison.Ordinal)) continue;
-            var values = new Dictionary<string, ReportValue>();
-            int row = 0;
-            int maxRow = cells.Values.Max(address => Address(address).Row);
-            while (reader.Read() && row <= maxRow)
-            {
-                foreach (var pair in cells)
-                {
-                    var pos = Address(pair.Value);
-                    if (pos.Row != row || pos.Column >= reader.FieldCount) continue;
-                    object? raw = reader.GetValue(pos.Column);
-                    var format = reader.GetNumberFormatString(pos.Column) ?? "";
-                    if (raw != null) values[pair.Key] = ParseValue(raw, format, pair.Value);
-                }
-                row++;
-            }
-            return values;
-        } while (reader.NextResult());
-        throw new InvalidDataException($"找不到名称为“{sheetName}”的工作表。请修改 EXE 旁边 config.json 的 sheetName。");
-    }
+      - name: Set unique upgrade version code (keep app package ID)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PYVERSION'
+          from pathlib import Path
+          import os
+          import re
 
-    private static Dictionary<string, ReportValue> ReadCsv(string path, Dictionary<string, string> cells)
-    {
-        string text;
-        try { text = File.ReadAllText(path, new UTF8Encoding(false, true)); }
-        catch (DecoderFallbackException) { text = File.ReadAllText(path, Encoding.GetEncoding("GB18030")); }
-        text = text.TrimStart('\uFEFF');
-        var firstLine = text.Split(new[] { "\r\n", "\n" }, 2, StringSplitOptions.None)[0];
-        var separators = new[] { ',', ';', '\t' };
-        char separator = separators.OrderByDescending(c => firstLine.Count(x => x == c)).First();
-        var rows = ParseCsvRows(text, separator);
-        var values = new Dictionary<string, ReportValue>();
-        foreach (var pair in cells)
-        {
-            var pos = Address(pair.Value);
-            if (pos.Row >= rows.Count || pos.Column >= rows[pos.Row].Count) continue;
-            string raw = rows[pos.Row][pos.Column];
-            if (!string.IsNullOrWhiteSpace(raw)) values[pair.Key] = ParseValue(raw, "", pair.Value);
-        }
-        return values;
-    }
+          gradle = Path('_official/app/build.gradle')
+          text = gradle.read_text(encoding='utf-8')
+          run_number = int(os.environ['GITHUB_RUN_NUMBER'])
+          run_attempt = int(os.environ['GITHUB_RUN_ATTEMPT'])
+          # Stable and increasing per workflow run/retry. Greater than old 4.1 (94).
+          version_code = 2000000 + run_number * 100 + run_attempt
+          if version_code > 2100000000:
+              raise SystemExit('::error::versionCode exceeded Android-safe range')
 
-    private static List<List<string>> ParseCsvRows(string text, char delimiter)
-    {
-        var rows = new List<List<string>>();
-        var current = new List<string>();
-        var cell = new StringBuilder();
-        bool quoted = false;
-        for (int i = 0; i < text.Length; i++)
-        {
-            char ch = text[i];
-            if (ch == '"')
-            {
-                if (quoted && i + 1 < text.Length && text[i + 1] == '"') { cell.Append('"'); i++; }
-                else quoted = !quoted;
-            }
-            else if (ch == delimiter && !quoted) { current.Add(cell.ToString()); cell.Clear(); }
-            else if ((ch == '\r' || ch == '\n') && !quoted)
-            {
-                if (ch == '\r' && i + 1 < text.Length && text[i + 1] == '\n') i++;
-                current.Add(cell.ToString()); cell.Clear(); rows.Add(current); current = new List<string>();
-            }
-            else cell.Append(ch);
-        }
-        if (cell.Length > 0 || current.Count > 0)
-        {
-            current.Add(cell.ToString()); rows.Add(current);
-        }
-        return rows;
-    }
+          if 'applicationId "com.antest1.gotobrowser"' not in text:
+              raise SystemExit('::error::Application ID changed! Refusing update build')
+          text, c1 = re.subn(r'(?m)^(\s*)versionCode\s+\d+\s*$',
+                             lambda m: f'{m.group(1)}versionCode {version_code}', text)
+          text, c2 = re.subn(r'(?m)^(\s*)versionName\s+"4\.1-GGOTO-UI5"\s*$',
+                             lambda m: f'{m.group(1)}versionName "4.1-GGOTO-UI5.1.{version_code}"', text)
+          if c1 != 1 or c2 != 1:
+              raise SystemExit(f'::error::Version fields mismatched: versionCode={c1}, versionName={c2}')
 
-    private static ReportValue ParseValue(object raw, string format, string address)
-    {
-        if (raw is bool) throw new InvalidDataException($"{address} 必须是数字，不能是布尔值。");
-        if (raw is double or float or decimal or int or long or short)
-        {
-            var n = Convert.ToDecimal(raw, CultureInfo.InvariantCulture);
-            bool percentage = format.Contains('%');
-            return new ReportValue(percentage ? n * 100 : n, percentage ? "%" : "");
-        }
-        var value = Convert.ToString(raw, CultureInfo.InvariantCulture)?.Trim() ?? "";
-        if (value == "持平") return new ReportValue(0);
-        value = value.Replace('−', '-').Replace('－', '-').Replace('﹣', '-').Replace('，', ',').Replace('％', '%');
-        bool parenthesized = (value.StartsWith("(") && value.EndsWith(")")) ||
-                             (value.StartsWith("（") && value.EndsWith("）"));
-        if (parenthesized) value = value.Substring(1, value.Length - 2);
-        bool percentageText = value.EndsWith("%");
-        if (percentageText) value = value.Substring(0, value.Length - 1);
-        value = value.Replace(",", "").Replace(" ", "");
-        if (!decimal.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var number))
-            throw new InvalidDataException($"{address} 的内容无法识别为数字：{raw}");
-        if (parenthesized) number = -Math.Abs(number);
-        return new ReportValue(number, percentageText ? "%" : "");
-    }
-}
+          # Use exactly the original key (stored as a GitHub secret) to sign debug.
+          # The default Android debug alias and passwords are supported, as are
+          # custom alias/password secrets if the installed version used them.
+          text += """
 
-internal static class WebDownloader
-{
-    public static string Run(string url, DateTime begin, DateTime end, string outputDirectory, Action<string> report)
-    {
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
-            (uri.Scheme != "http" && uri.Scheme != "https") || url.Contains("66.66.666.666"))
-            throw new InvalidDataException("请填写真实的公司内网网址，不能使用示例地址。");
+          // GGOTO-UI5.1: stable upgrade signing; never change the package ID.
+          android {
+              signingConfigs {
+                  ggotoExistingKey {
+                      storeFile file(System.getenv('GGOTO_SIGNING_FILE'))
+                      storePassword (System.getenv('GGOTO_KEYSTORE_PASSWORD') ?: 'android')
+                      keyAlias (System.getenv('GGOTO_KEY_ALIAS') ?: 'androiddebugkey')
+                      keyPassword (System.getenv('GGOTO_KEY_PASSWORD') ?: 'android')
+                  }
+              }
+              buildTypes {
+                  debug {
+                      signingConfig signingConfigs.ggotoExistingKey
+                  }
+              }
+          }
+          """
+          gradle.write_text(text, encoding='utf-8')
+          print('Application ID : com.antest1.gotobrowser (unchanged)')
+          print('versionCode    :', version_code)
+          print('versionName    :', f'4.1-GGOTO-UI5.1.{version_code}')
+          PYVERSION
 
-        var baseDir = AppContext.BaseDirectory;
-        string chrome = Path.Combine(baseDir, "chrome-win", "chrome.exe");
-        string driverFile = Path.Combine(baseDir, "chromedriver.exe");
-        if (!File.Exists(chrome)) throw new FileNotFoundException("缺少内置浏览器：chrome-win\\chrome.exe", chrome);
-        if (!File.Exists(driverFile)) throw new FileNotFoundException("缺少内置驱动：chromedriver.exe", driverFile);
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+          cache-dependency-path: _official/**/*.gradle*
 
-        Directory.CreateDirectory(outputDirectory);
-        var tempDirectory = Path.Combine(Path.GetTempPath(), "AccidentReporter_" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(tempDirectory);
+      - name: Require your existing APK signing certificate (for overwrite installation)
+        shell: bash
+        env:
+          GGOTO_DEBUG_KEYSTORE_B64: ${{ secrets.GGOTO_DEBUG_KEYSTORE_B64 }}
+          GGOTO_KEYSTORE_PASSWORD: ${{ secrets.GGOTO_KEYSTORE_PASSWORD }}
+          GGOTO_KEY_ALIAS: ${{ secrets.GGOTO_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GGOTO_DEBUG_KEYSTORE_B64:-}" ]; then
+            echo '::error title=Original signing key required::To overwrite an existing Android APK, upload its ORIGINAL keystore as GitHub Actions repository secret GGOTO_DEBUG_KEYSTORE_B64 (base64). A new key or a generated debug key cannot update an APK signed by another key.'
+            echo 'If the original private key is unrecoverable, you must uninstall the old app once (back up your data first); future updates can then reuse a persistent key.'
+            exit 20
+          fi
 
-        try
-        {
-            var service = ChromeDriverService.CreateDefaultService(baseDir, "chromedriver.exe");
-            service.HideCommandPromptWindow = true;
-            var options = new ChromeOptions { BinaryLocation = chrome };
-            options.AddArgument("--no-first-run");
-            options.AddArgument("--no-default-browser-check");
-            options.AddUserProfilePreference("download.default_directory", tempDirectory);
-            options.AddUserProfilePreference("download.prompt_for_download", false);
-            options.AddUserProfilePreference("download.directory_upgrade", true);
+          mkdir -p "$RUNNER_TEMP/ggoto-signing"
+          KEY_FILE="$RUNNER_TEMP/ggoto-signing/original-key.jks"
+          printf '%s' "$GGOTO_DEBUG_KEYSTORE_B64" | base64 --decode > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+          if [ ! -s "$KEY_FILE" ]; then
+            echo '::error::Keystore secret decoded to an empty file.'
+            exit 21
+          fi
+          KEYSTORE_PASSWORD="${GGOTO_KEYSTORE_PASSWORD:-android}"
+          KEY_ALIAS="${GGOTO_KEY_ALIAS:-androiddebugkey}"
+          if ! keytool -list -keystore "$KEY_FILE" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" > /dev/null 2>&1; then
+            echo '::error::Cannot open original keystore or locate alias. Check GGOTO_KEYSTORE_PASSWORD and GGOTO_KEY_ALIAS repository secrets.'
+            exit 22
+          fi
+          echo "GGOTO_SIGNING_FILE=$KEY_FILE" >> "$GITHUB_ENV"
+          echo 'Existing signing keystore verified. No new signing key generated.'
 
-            report("启动内置 Chromium 93…");
-            using var browser = new ChromeDriver(service, options, TimeSpan.FromSeconds(60));
-            report("打开公司报表网页…");
-            browser.Navigate().GoToUrl(uri);
+      - name: Build Ggotobrowser APK
+        working-directory: _official
+        shell: bash
+        env:
+          GGOTO_KEYSTORE_PASSWORD: ${{ secrets.GGOTO_KEYSTORE_PASSWORD }}
+          GGOTO_KEY_ALIAS: ${{ secrets.GGOTO_KEY_ALIAS }}
+          GGOTO_KEY_PASSWORD: ${{ secrets.GGOTO_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          echo "Starting full Android debug build with original signing key..."
+          ./gradlew --no-daemon clean assembleDebug --stacktrace
+          echo "Gradle assembleDebug completed."
 
-            report("填写起止日期…");
-            SetDate(browser, "input#bq_begin", begin);
-            SetDate(browser, "input#bq_end", end);
+      - name: Verify APK output
+        id: verify_apk
+        shell: bash
+        env:
+          GGOTO_KEYSTORE_PASSWORD: ${{ secrets.GGOTO_KEYSTORE_PASSWORD }}
+          GGOTO_KEY_ALIAS: ${{ secrets.GGOTO_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          APK_DIR="_official/app/build/outputs/apk/debug"
+          echo "Searching for APK files in: $APK_DIR"
 
-            var buttons = browser.FindElements(By.CssSelector("button")).Where(b => b.Displayed).ToList();
-            var likely = buttons.Where(b => Regex.IsMatch(b.Text ?? "", "生成|报表|查询")).ToList();
-            IWebElement button = likely.Count == 1 ? likely[0] : buttons.Count == 1 ? buttons[0] :
-                throw new InvalidDataException("无法唯一确定网页生成报表按钮，请检查按钮文字。");
-            report("生成报表中（最长等待3分钟）…");
-            button.Click();
+          if [ ! -d "$APK_DIR" ]; then
+            echo "::error title=APK output directory missing::Gradle did not create app/build/outputs/apk/debug."
+            echo "Available build output directories:"
+            find _official/app/build/outputs -maxdepth 5 -type d -print 2>/dev/null || true
+            exit 7
+          fi
 
-            string? successHandle = null;
-            var until = DateTime.UtcNow.AddMinutes(3);
-            while (DateTime.UtcNow < until && successHandle == null)
-            {
-                foreach (var handle in browser.WindowHandles)
-                {
-                    try
-                    {
-                        browser.SwitchTo().Window(handle);
-                        if (browser.FindElements(By.CssSelector("h1"))
-                            .Any(h => (h.Text ?? "").Contains("报表生成成功")))
-                        { successHandle = handle; break; }
-                    }
-                    catch (WebDriverException) { /* 页面切换时重试 */ }
-                }
-                if (successHandle == null) Thread.Sleep(1000);
-            }
-            if (successHandle == null) throw new TimeoutException("3分钟内未检测到“✅ 报表生成成功！”标题。");
+          find "$APK_DIR" -type f -name '*.apk' -print
+          APK_FILE="$(find "$APK_DIR" -type f -name '*.apk' -print -quit)"
 
-            browser.SwitchTo().Window(successHandle);
-            var links = browser.FindElements(By.CssSelector("a:nth-child(1)"))
-                .Where(l => l.Displayed).ToList();
-            var marked = links.Where(l => (l.Text ?? "").Contains("下载") || l.GetAttribute("download") != null).ToList();
-            IWebElement downloadLink = marked.Count == 1 ? marked[0] : links.Count == 1 ? links[0] :
-                throw new InvalidDataException("无法唯一确定下载链接 a:nth-child(1)。");
+          if [ -z "$APK_FILE" ]; then
+            echo "::error title=APK not generated::No APK file was found after assembleDebug."
+            exit 8
+          fi
 
-            report("下载文件中…");
-            downloadLink.Click();
-            var downloaded = WaitForCompletedDownload(tempDirectory, TimeSpan.FromMinutes(2));
-            var filename = Path.GetFileName(downloaded);
-            if (string.IsNullOrWhiteSpace(filename)) filename = $"事故报表_{end:yyyy-MM-dd}.xlsx";
-            var target = Path.Combine(outputDirectory, filename);
-            var counter = 1;
-            while (File.Exists(target))
-            {
-                target = Path.Combine(outputDirectory,
-                    Path.GetFileNameWithoutExtension(filename) + "_" + counter++ + Path.GetExtension(filename));
-            }
-            File.Move(downloaded, target);
-            return target;
-        }
-        finally
-        {
-            try { Directory.Delete(tempDirectory, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
-        }
-    }
+          echo "APK_FILE=$APK_FILE" >> "$GITHUB_OUTPUT"
+          echo "APK ready: $APK_FILE"
+          echo "APK size: $(du -h "$APK_FILE" | cut -f1)"
+          if [ -n "${ANDROID_HOME:-}" ]; then
+            APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner -print 2>/dev/null | sort -V | tail -1 || true)"
+            AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt -print 2>/dev/null | sort -V | tail -1 || true)"
+            if [ -n "$APKSIGNER" ]; then
+              "$APKSIGNER" verify --print-certs "$APK_FILE"
+              if [ -n "${GGOTO_SIGNING_FILE:-}" ] && [ -f "$GGOTO_SIGNING_FILE" ]; then
+                EXPECTED_CERT_SHA="$(keytool -exportcert -keystore "$GGOTO_SIGNING_FILE" -storepass "${GGOTO_KEYSTORE_PASSWORD:-android}" -alias "${GGOTO_KEY_ALIAS:-androiddebugkey}" | sha256sum | awk '{print $1}')"
+                ACTUAL_CERT_SHA="$("$APKSIGNER" verify --print-certs "$APK_FILE" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr '[:upper:]' '[:lower:]')"
+                if [ -z "$ACTUAL_CERT_SHA" ] || [ "$EXPECTED_CERT_SHA" != "$ACTUAL_CERT_SHA" ]; then
+                  echo '::error::APK signature does not match the signing key supplied via GGOTO_DEBUG_KEYSTORE_B64.'
+                  exit 24
+                fi
+                echo 'APK signing certificate matches the supplied original keystore.'
+              fi
+            else
+              echo 'Android apksigner was not found; Gradle already signed the debug output.'
+            fi
+            if [ -n "$AAPT" ]; then
+              BADGING="$("$AAPT" dump badging "$APK_FILE")"
+              echo "$BADGING" | grep '^package:'
+              echo "$BADGING" | grep -q "package: name='com.antest1.gotobrowser'" || {
+                echo '::error::APK package ID changed; cannot upgrade existing app.'
+                exit 23
+              }
+            fi
+          fi
+          {
+            echo "## GGoto build result"
+            echo ""
+            echo "- Source: GotoBrowser 4.1"
+            echo "- Source commit: 6e78d276f0c884e80c2a5a03a0de5973a42ae969"
+            echo "- APK: $APK_FILE"
+          } >> "$GITHUB_STEP_SUMMARY"
 
-    private static void SetDate(ChromeDriver browser, string selector, DateTime date)
-    {
-        string script = @"
-            var selector = arguments[0], ordinary = arguments[1], native = arguments[2];
-            var node = document.querySelector(selector);
-            if (!node) return '找不到日期控件：' + selector;
-            node.removeAttribute('readonly');
-            var value = node.type === 'date' ? native : ordinary;
-            var set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-            set.call(node, value);
-            node.dispatchEvent(new Event('input', {bubbles: true}));
-            node.dispatchEvent(new Event('change', {bubbles: true}));
-            node.dispatchEvent(new Event('blur', {bubbles: true}));
-            return '';";
-        string? error = ((IJavaScriptExecutor)browser).ExecuteScript(
-            script, selector, date.ToString("yyyy/MM/dd"), date.ToString("yyyy-MM-dd")) as string;
-        if (!string.IsNullOrEmpty(error)) throw new InvalidDataException(error);
-    }
-
-    private static string WaitForCompletedDownload(string folder, TimeSpan timeout)
-    {
-        var until = DateTime.UtcNow.Add(timeout);
-        string? last = null;
-        long size = -1;
-        int stable = 0;
-        while (DateTime.UtcNow < until)
-        {
-            var all = Directory.GetFiles(folder);
-            bool partial = all.Any(f => f.EndsWith(".crdownload", StringComparison.OrdinalIgnoreCase) ||
-                                        f.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase));
-            var ready = all.Where(f => !f.EndsWith(".crdownload", StringComparison.OrdinalIgnoreCase) &&
-                                       !f.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase))
-                           .OrderByDescending(File.GetLastWriteTimeUtc).FirstOrDefault();
-            if (!partial && ready != null)
-            {
-                long current = new FileInfo(ready).Length;
-                if (ready == last && current == size) stable++;
-                else { stable = 0; last = ready; size = current; }
-                if (stable >= 4) return ready;
-            }
-            Thread.Sleep(500);
-        }
-        throw new TimeoutException("2分钟内未检测到完整下载文件。");
-    }
-}
-
-internal sealed class MainForm : Form
-{
-    public MainForm()
-    {
-        Text = "事故数据工具 · C# V2.1 可配置版";
-        StartPosition = FormStartPosition.CenterScreen;
-        ClientSize = new Size(420, 320);
-        MinimumSize = new Size(420, 365);
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(24), RowCount = 5, ColumnCount = 1 };
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 55));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
-        Controls.Add(layout);
-        layout.Controls.Add(new Label {
-            Text = "事故数据工具", Font = new Font("Microsoft YaHei UI", 17, FontStyle.Bold),
-            AutoSize = false, TextAlign = ContentAlignment.MiddleCenter, Dock = DockStyle.Fill
-        }, 0, 0);
-        var download = new Button { Text = "下载数据", Dock = DockStyle.Fill };
-        download.Click += (_, _) => new DownloadForm().ShowDialog(this);
-        layout.Controls.Add(download, 0, 1);
-        var generate = new Button { Text = "生成数据报送", Dock = DockStyle.Fill };
-        generate.Click += (_, _) => Generate();
-        layout.Controls.Add(generate, 0, 2);
-        var editConfig = new Button { Text = "编辑工作表、范文与单元格（无需重新打包）", Dock = DockStyle.Fill };
-        editConfig.Click += (_, _) => EditConfig();
-        layout.Controls.Add(editConfig, 0, 3);
-        layout.Controls.Add(new Label {
-            Text = "离线 Chromium + Excel 读取 · config.json 可修改", ForeColor = Color.DimGray,
-            AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter
-        }, 0, 4);
-    }
-
-    private void EditConfig()
-    {
-        string path = ReportConfig.ConfigPath;
-        if (!File.Exists(path))
-        {
-            MessageBox.Show(this, "未找到 config.json，请确认该文件与 EXE 位于同一文件夹。", "配置文件缺失");
-            return;
-        }
-        try
-        {
-            Process.Start(new ProcessStartInfo {
-                FileName = "notepad.exe", Arguments = "\"" + path + "\"", UseShellExecute = false
-            });
-        }
-        catch (Exception e)
-        {
-            MessageBox.Show(this, e.Message, "无法打开配置文件", MessageBoxButtons.OK, MessageBoxIcon.Error);
-        }
-    }
-
-    private void Generate()
-    {
-        using var picker = new OpenFileDialog {
-            Title = "选择事故数据文件", Filter = "表格文件 (*.xlsx;*.xls;*.csv)|*.xlsx;*.xls;*.csv|所有文件 (*.*)|*.*"
-        };
-        if (picker.ShowDialog(this) != DialogResult.OK) return;
-        try
-        {
-            string report = ReportBuilder.Generate(picker.FileName);
-            using var win = new Form {
-                Text = "生成的数据报送", StartPosition = FormStartPosition.CenterParent,
-                Width = 860, Height = 580
-            };
-            var preview = new TextBox {
-                Multiline = true, ScrollBars = ScrollBars.Both, WordWrap = true,
-                Dock = DockStyle.Fill, Font = new Font("Microsoft YaHei UI", 11), Text = report
-            };
-            var bar = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 52, FlowDirection = FlowDirection.LeftToRight };
-            var copy = new Button { Text = "复制全文", Width = 100 };
-            copy.Click += (_, _) => { Clipboard.SetText(preview.Text); MessageBox.Show(win, "文字已复制。"); };
-            var save = new Button { Text = "保存TXT", Width = 100 };
-            save.Click += (_, _) => {
-                using var dialog = new SaveFileDialog { Filter = "文本文件|*.txt", FileName = "事故报送_" + Path.GetFileNameWithoutExtension(picker.FileName) + ".txt" };
-                if (dialog.ShowDialog(win) == DialogResult.OK)
-                {
-                    File.WriteAllText(dialog.FileName, preview.Text, new UTF8Encoding(true));
-                    MessageBox.Show(win, "已保存。", "成功");
-                }
-            };
-            bar.Controls.Add(copy); bar.Controls.Add(save);
-            win.Controls.Add(preview); win.Controls.Add(bar);
-            win.ShowDialog(this);
-        }
-        catch (Exception ex) { MessageBox.Show(this, ex.Message, "报送生成失败", MessageBoxButtons.OK, MessageBoxIcon.Error); }
-    }
-}
-
-internal sealed class DownloadForm : Form
-{
-    private readonly TextBox url = new() { Text = "http://68.66.666.666:6006/" };
-    private readonly TextBox begin = new() { Text = "2026/07/01" };
-    private readonly TextBox end = new() { Text = DateTime.Today.AddDays(-1).ToString("yyyy/MM/dd") };
-    private readonly TextBox folder = new() { Text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads") };
-    private readonly Label status = new() { Text = "待开始", ForeColor = Color.DarkBlue, AutoSize = true };
-    private readonly Button start = new() { Text = "生成并下载报表", Dock = DockStyle.Fill, Height = 36 };
-
-    public DownloadForm()
-    {
-        Text = "下载事故数据";
-        StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(760, 340);
-        MinimumSize = new Size(670, 350);
-        var panel = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(20), ColumnCount = 3, RowCount = 6 };
-        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 140));
-        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 82));
-        for (int i = 0; i < 4; i++) panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
-        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
-        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 55));
-        Controls.Add(panel);
-
-        void Add(int row, string name, TextBox editor)
-        {
-            panel.Controls.Add(new Label { Text = name, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, row);
-            editor.Dock = DockStyle.Fill;
-            panel.Controls.Add(editor, 1, row);
-        }
-        Add(0, "报表网址", url);
-        Add(1, "开始日期", begin);
-        Add(2, "截止日期（昨天）", end);
-        Add(3, "下载保存位置", folder);
-        var browse = new Button { Text = "浏览…", Dock = DockStyle.Fill };
-        browse.Click += (_, _) => {
-            using var picker = new FolderBrowserDialog { SelectedPath = folder.Text };
-            if (picker.ShowDialog(this) == DialogResult.OK) folder.Text = picker.SelectedPath;
-        };
-        panel.Controls.Add(browse, 2, 3);
-        panel.Controls.Add(status, 1, 4);
-        start.Click += StartClick;
-        panel.Controls.Add(start, 1, 5);
-    }
-
-    private async void StartClick(object? sender, EventArgs e)
-    {
-        if (!DateTime.TryParseExact(begin.Text.Trim(), "yyyy/MM/dd", CultureInfo.InvariantCulture,
-            DateTimeStyles.None, out var first) ||
-            !DateTime.TryParseExact(end.Text.Trim(), "yyyy/MM/dd", CultureInfo.InvariantCulture,
-            DateTimeStyles.None, out var last) || first > last)
-        { MessageBox.Show(this, "请检查起止日期，格式为 yyyy/MM/dd。", "日期不正确"); return; }
-        if (string.IsNullOrWhiteSpace(folder.Text))
-        { MessageBox.Show(this, "请选择下载目录。"); return; }
-
-        start.Enabled = false;
-        try
-        {
-            var result = await Task.Run(() => WebDownloader.Run(url.Text.Trim(), first, last, folder.Text.Trim(),
-                message => { if (IsHandleCreated && !IsDisposed) BeginInvoke(new Action(() => status.Text = message)); }));
-            status.Text = "下载完成：" + result;
-            MessageBox.Show(this, "文件已保存：\r\n" + result, "下载成功");
-        }
-        catch (Exception ex)
-        {
-            status.Text = "下载失败";
-            MessageBox.Show(this, ex.Message, "下载失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
-        }
-        finally { start.Enabled = true; }
-    }
-}
+      - name: Upload Ggotobrowser APK
+        uses: actions/upload-artifact@v6
+        with:
+          name: Ggotobrowser-4.1-UI5.1-UpgradeInstall-APK
+          path: _official/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
