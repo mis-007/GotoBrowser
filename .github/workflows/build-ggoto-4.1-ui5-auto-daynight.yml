@@ -1,0 +1,616 @@
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Drawing;
+using System.Globalization;
+using System.IO;
+using System.Linq;
+using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using ExcelDataReader;
+using OpenQA.Selenium;
+using OpenQA.Selenium.Chrome;
+
+namespace AccidentReporter;
+
+internal static class Program
+{
+    [STAThread]
+    private static void Main()
+    {
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+        Application.SetHighDpiMode(HighDpiMode.SystemAware);
+        Application.EnableVisualStyles();
+        Application.SetCompatibleTextRenderingDefault(false);
+        Application.Run(new MainForm());
+    }
+}
+
+internal readonly struct ReportValue
+{
+    public readonly decimal Number;
+    public readonly string Unit;
+
+    public ReportValue(decimal number, string unit = "")
+    {
+        Number = number;
+        Unit = unit;
+    }
+}
+
+internal sealed class ReportConfig
+{
+    public string SheetName { get; private set; } = "事故";
+    public Dictionary<string, string> Cells { get; } = new(StringComparer.Ordinal);
+    public List<List<string>> Templates { get; } = new();
+    public static string ConfigPath => Path.Combine(AppContext.BaseDirectory, "config.json");
+
+    public static ReportConfig Load()
+    {
+        if (!File.Exists(ConfigPath))
+            throw new FileNotFoundException("缺少 config.json，请将它放在 EXE 同一目录。", ConfigPath);
+        try
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllText(ConfigPath, Encoding.UTF8),
+                new JsonDocumentOptions { AllowTrailingCommas = true });
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("cellMap", out var map) || map.ValueKind != JsonValueKind.Object)
+                throw new InvalidDataException("config.json 缺少 cellMap 单元格映射对象。");
+            if (!root.TryGetProperty("templates", out var templates) || templates.ValueKind != JsonValueKind.Array)
+                throw new InvalidDataException("config.json 缺少 templates 范文数组。");
+
+            var config = new ReportConfig();
+            // Keep supporting existing V2 config.json files that omit sheetName.
+            if (root.TryGetProperty("sheetName", out var sheetName))
+            {
+                if (sheetName.ValueKind != JsonValueKind.String ||
+                    string.IsNullOrWhiteSpace(sheetName.GetString()))
+                    throw new InvalidDataException("config.json 的 sheetName 必须填写非空工作表名称，例如 \"事故\"。");
+                config.SheetName = sheetName.GetString()!.Trim();
+            }
+            foreach (var item in map.EnumerateObject())
+            {
+                if (item.Value.ValueKind != JsonValueKind.String)
+                    throw new InvalidDataException($"变量 {item.Name} 的单元格位置必须是字符串，如 B3。");
+                string address = (item.Value.GetString() ?? "").Trim().ToUpperInvariant();
+                if (!Regex.IsMatch(address, @"^[A-Z]{1,3}[1-9][0-9]*$"))
+                    throw new InvalidDataException($"变量 {item.Name} 的单元格地址无效：{address}");
+                config.Cells.Add(item.Name.Trim(), address);
+            }
+            if (config.Cells.Count == 0) throw new InvalidDataException("cellMap 不能为空。");
+
+            foreach (var section in templates.EnumerateArray())
+            {
+                if (section.ValueKind != JsonValueKind.Object ||
+                    !section.TryGetProperty("lines", out var lines) || lines.ValueKind != JsonValueKind.Array)
+                    throw new InvalidDataException("每套范文都必须包含 lines 文本行数组。");
+                var sectionLines = new List<string>();
+                foreach (var line in lines.EnumerateArray())
+                {
+                    if (line.ValueKind != JsonValueKind.String)
+                        throw new InvalidDataException("范文 lines 中每一行都必须加双引号。");
+                    sectionLines.Add(line.GetString() ?? "");
+                }
+                if (sectionLines.Count == 0) throw new InvalidDataException("范文 lines 不能为空。");
+                config.Templates.Add(sectionLines);
+            }
+            if (config.Templates.Count == 0) throw new InvalidDataException("至少需要一套范文。");
+            return config;
+        }
+        catch (JsonException e)
+        {
+            throw new InvalidDataException("config.json 格式有误，请检查逗号、引号及括号：" + e.Message, e);
+        }
+    }
+}
+
+internal static class ReportBuilder
+{
+
+    private static readonly Regex DatePattern = new(@"(\d{4})年(\d{1,2})月(\d{1,2})日", RegexOptions.Compiled);
+    private static readonly Regex AddressPattern = new(@"^([A-Z]+)(\d+)$", RegexOptions.Compiled);
+    private static readonly Regex TokenPattern = new(@"\{([^{}\r\n]+)\}", RegexOptions.Compiled);
+
+    public static string Generate(string path)
+    {
+        var matches = DatePattern.Matches(Path.GetFileNameWithoutExtension(path));
+        if (matches.Count < 2)
+            throw new InvalidDataException("文件名需要包含时间区间，如(2026年07月01日-2026年10月20日)。");
+
+        DateTime ParseDate(Match m) => new(
+            int.Parse(m.Groups[1].Value), int.Parse(m.Groups[2].Value), int.Parse(m.Groups[3].Value));
+        var begin = ParseDate(matches[matches.Count - 2]);
+        var end = ParseDate(matches[matches.Count - 1]);
+        if (begin > end) throw new InvalidDataException("文件名的起始日期晚于截止日期。");
+
+        var config = ReportConfig.Load();
+        var values = ReadValues(path, config)!;
+        ReportValue Get(string key)
+        {
+            if (values!.TryGetValue(key, out var value)) return value;
+            throw new InvalidDataException($"范文引用了变量 {key}，但 config.json 的 cellMap 未定义。");
+        }
+        string Count(string key)
+        {
+            var value = Get(key);
+            if (value.Unit.Length > 0) throw new InvalidDataException($"{key} 是百分数，不能用于事故数量。");
+            return Format(value.Number);
+        }
+        string Trend(string key, bool yearOnYear = true) => TrendNumber(Get(key), yearOnYear ? "同比" : "");
+        string Compare(string current, string previous, string unit = "")
+        {
+            var a = Get(current);
+            var b = Get(previous);
+            if (a.Unit != b.Unit) throw new InvalidDataException($"{current}、{previous} 单位不一致。");
+            return TrendNumber(new ReportValue(a.Number - b.Number, a.Unit == "%" ? "个百分点" : unit), "同比");
+        }
+
+        string ReplaceToken(Match match)
+        {
+            string token = match.Groups[1].Value.Trim();
+            return token switch
+            {
+                "起始月" => begin.Month.ToString(),
+                "截止月" => end.Month.ToString(),
+                "截止日" => end.Day.ToString(),
+                "截至日期" => $"{end.Month}月{end.Day}日",
+                _ when token.StartsWith("同比:", StringComparison.Ordinal) => Trend(token[3..]),
+                _ when token.StartsWith("趋势:", StringComparison.Ordinal) => Trend(token[3..], false),
+                _ when token.StartsWith("差额:", StringComparison.Ordinal) => ResolveDifference(token[3..]),
+                _ => Count(token)
+            };
+        }
+
+        string ResolveDifference(string expression)
+        {
+            var tokens = expression.Split(':');
+            var operands = tokens[0].Split('-');
+            if (tokens.Length > 2 || operands.Length != 2 ||
+                string.IsNullOrWhiteSpace(operands[0]) || string.IsNullOrWhiteSpace(operands[1]))
+                throw new InvalidDataException("差额占位符格式应为 {差额:A1-C1:起}。当前是 " + expression);
+            return Compare(operands[0], operands[1], tokens.Length == 2 ? tokens[1] : "");
+        }
+
+        return string.Join("\r\n\r\n", config.Templates.Select(section =>
+            string.Join("\r\n", section.Select(line => TokenPattern.Replace(line, ReplaceToken)))));
+    }
+
+    private static string Format(decimal number) => number.ToString("0.############################", CultureInfo.InvariantCulture);
+
+    private static string TrendNumber(ReportValue value, string prefix)
+    {
+        if (value.Number == 0) return prefix + "持平";
+        return prefix + (value.Number < 0 ? "下降" : "上升") + Format(Math.Abs(value.Number)) + value.Unit;
+    }
+
+    private static (int Row, int Column) Address(string address)
+    {
+        var m = AddressPattern.Match(address);
+        if (!m.Success) throw new ArgumentException("单元格地址无效：" + address);
+        int c = 0;
+        foreach (var letter in m.Groups[1].Value) c = c * 26 + (letter - 'A' + 1);
+        return (int.Parse(m.Groups[2].Value) - 1, c - 1);
+    }
+
+    private static Dictionary<string, ReportValue> ReadValues(string path, ReportConfig config)
+    {
+        var cells = config.Cells;
+        var extension = Path.GetExtension(path).ToLowerInvariant();
+        var result = extension switch
+        {
+            ".xls" or ".xlsx" => ReadExcel(path, cells, config.SheetName),
+            ".csv" => ReadCsv(path, cells),
+            _ => throw new InvalidDataException("只能选择 XLS、XLSX 或 CSV。")
+        };
+        foreach (var pair in cells)
+            if (!result.ContainsKey(pair.Key))
+                throw new InvalidDataException($"单元格 {pair.Value}（变量 {pair.Key}）为空或超出表格范围。");
+        return result;
+    }
+
+    private static Dictionary<string, ReportValue> ReadExcel(string path, Dictionary<string, string> cells, string sheetName)
+    {
+        using var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        using var reader = ExcelReaderFactory.CreateReader(stream);
+        do
+        {
+            if (!string.Equals(reader.Name, sheetName, StringComparison.Ordinal)) continue;
+            var values = new Dictionary<string, ReportValue>();
+            int row = 0;
+            int maxRow = cells.Values.Max(address => Address(address).Row);
+            while (reader.Read() && row <= maxRow)
+            {
+                foreach (var pair in cells)
+                {
+                    var pos = Address(pair.Value);
+                    if (pos.Row != row || pos.Column >= reader.FieldCount) continue;
+                    object? raw = reader.GetValue(pos.Column);
+                    var format = reader.GetNumberFormatString(pos.Column) ?? "";
+                    if (raw != null) values[pair.Key] = ParseValue(raw, format, pair.Value);
+                }
+                row++;
+            }
+            return values;
+        } while (reader.NextResult());
+        throw new InvalidDataException($"找不到名称为“{sheetName}”的工作表。请修改 EXE 旁边 config.json 的 sheetName。");
+    }
+
+    private static Dictionary<string, ReportValue> ReadCsv(string path, Dictionary<string, string> cells)
+    {
+        string text;
+        try { text = File.ReadAllText(path, new UTF8Encoding(false, true)); }
+        catch (DecoderFallbackException) { text = File.ReadAllText(path, Encoding.GetEncoding("GB18030")); }
+        text = text.TrimStart('\uFEFF');
+        var firstLine = text.Split(new[] { "\r\n", "\n" }, 2, StringSplitOptions.None)[0];
+        var separators = new[] { ',', ';', '\t' };
+        char separator = separators.OrderByDescending(c => firstLine.Count(x => x == c)).First();
+        var rows = ParseCsvRows(text, separator);
+        var values = new Dictionary<string, ReportValue>();
+        foreach (var pair in cells)
+        {
+            var pos = Address(pair.Value);
+            if (pos.Row >= rows.Count || pos.Column >= rows[pos.Row].Count) continue;
+            string raw = rows[pos.Row][pos.Column];
+            if (!string.IsNullOrWhiteSpace(raw)) values[pair.Key] = ParseValue(raw, "", pair.Value);
+        }
+        return values;
+    }
+
+    private static List<List<string>> ParseCsvRows(string text, char delimiter)
+    {
+        var rows = new List<List<string>>();
+        var current = new List<string>();
+        var cell = new StringBuilder();
+        bool quoted = false;
+        for (int i = 0; i < text.Length; i++)
+        {
+            char ch = text[i];
+            if (ch == '"')
+            {
+                if (quoted && i + 1 < text.Length && text[i + 1] == '"') { cell.Append('"'); i++; }
+                else quoted = !quoted;
+            }
+            else if (ch == delimiter && !quoted) { current.Add(cell.ToString()); cell.Clear(); }
+            else if ((ch == '\r' || ch == '\n') && !quoted)
+            {
+                if (ch == '\r' && i + 1 < text.Length && text[i + 1] == '\n') i++;
+                current.Add(cell.ToString()); cell.Clear(); rows.Add(current); current = new List<string>();
+            }
+            else cell.Append(ch);
+        }
+        if (cell.Length > 0 || current.Count > 0)
+        {
+            current.Add(cell.ToString()); rows.Add(current);
+        }
+        return rows;
+    }
+
+    private static ReportValue ParseValue(object raw, string format, string address)
+    {
+        if (raw is bool) throw new InvalidDataException($"{address} 必须是数字，不能是布尔值。");
+        if (raw is double or float or decimal or int or long or short)
+        {
+            var n = Convert.ToDecimal(raw, CultureInfo.InvariantCulture);
+            bool percentage = format.Contains('%');
+            return new ReportValue(percentage ? n * 100 : n, percentage ? "%" : "");
+        }
+        var value = Convert.ToString(raw, CultureInfo.InvariantCulture)?.Trim() ?? "";
+        if (value == "持平") return new ReportValue(0);
+        value = value.Replace('−', '-').Replace('－', '-').Replace('﹣', '-').Replace('，', ',').Replace('％', '%');
+        bool parenthesized = (value.StartsWith("(") && value.EndsWith(")")) ||
+                             (value.StartsWith("（") && value.EndsWith("）"));
+        if (parenthesized) value = value.Substring(1, value.Length - 2);
+        bool percentageText = value.EndsWith("%");
+        if (percentageText) value = value.Substring(0, value.Length - 1);
+        value = value.Replace(",", "").Replace(" ", "");
+        if (!decimal.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var number))
+            throw new InvalidDataException($"{address} 的内容无法识别为数字：{raw}");
+        if (parenthesized) number = -Math.Abs(number);
+        return new ReportValue(number, percentageText ? "%" : "");
+    }
+}
+
+internal static class WebDownloader
+{
+    public static string Run(string url, DateTime begin, DateTime end, string outputDirectory, Action<string> report)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
+            (uri.Scheme != "http" && uri.Scheme != "https") || url.Contains("66.66.666.666"))
+            throw new InvalidDataException("请填写真实的公司内网网址，不能使用示例地址。");
+
+        var baseDir = AppContext.BaseDirectory;
+        string chrome = Path.Combine(baseDir, "chrome-win", "chrome.exe");
+        string driverFile = Path.Combine(baseDir, "chromedriver.exe");
+        if (!File.Exists(chrome)) throw new FileNotFoundException("缺少内置浏览器：chrome-win\\chrome.exe", chrome);
+        if (!File.Exists(driverFile)) throw new FileNotFoundException("缺少内置驱动：chromedriver.exe", driverFile);
+
+        Directory.CreateDirectory(outputDirectory);
+        var tempDirectory = Path.Combine(Path.GetTempPath(), "AccidentReporter_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDirectory);
+
+        try
+        {
+            var service = ChromeDriverService.CreateDefaultService(baseDir, "chromedriver.exe");
+            service.HideCommandPromptWindow = true;
+            var options = new ChromeOptions { BinaryLocation = chrome };
+            options.AddArgument("--no-first-run");
+            options.AddArgument("--no-default-browser-check");
+            options.AddUserProfilePreference("download.default_directory", tempDirectory);
+            options.AddUserProfilePreference("download.prompt_for_download", false);
+            options.AddUserProfilePreference("download.directory_upgrade", true);
+
+            report("启动内置 Chromium 93…");
+            using var browser = new ChromeDriver(service, options, TimeSpan.FromSeconds(60));
+            report("打开公司报表网页…");
+            browser.Navigate().GoToUrl(uri);
+
+            report("填写起止日期…");
+            SetDate(browser, "input#bq_begin", begin);
+            SetDate(browser, "input#bq_end", end);
+
+            var buttons = browser.FindElements(By.CssSelector("button")).Where(b => b.Displayed).ToList();
+            var likely = buttons.Where(b => Regex.IsMatch(b.Text ?? "", "生成|报表|查询")).ToList();
+            IWebElement button = likely.Count == 1 ? likely[0] : buttons.Count == 1 ? buttons[0] :
+                throw new InvalidDataException("无法唯一确定网页生成报表按钮，请检查按钮文字。");
+            report("生成报表中（最长等待3分钟）…");
+            button.Click();
+
+            string? successHandle = null;
+            var until = DateTime.UtcNow.AddMinutes(3);
+            while (DateTime.UtcNow < until && successHandle == null)
+            {
+                foreach (var handle in browser.WindowHandles)
+                {
+                    try
+                    {
+                        browser.SwitchTo().Window(handle);
+                        if (browser.FindElements(By.CssSelector("h1"))
+                            .Any(h => (h.Text ?? "").Contains("报表生成成功")))
+                        { successHandle = handle; break; }
+                    }
+                    catch (WebDriverException) { /* 页面切换时重试 */ }
+                }
+                if (successHandle == null) Thread.Sleep(1000);
+            }
+            if (successHandle == null) throw new TimeoutException("3分钟内未检测到“✅ 报表生成成功！”标题。");
+
+            browser.SwitchTo().Window(successHandle);
+            var links = browser.FindElements(By.CssSelector("a:nth-child(1)"))
+                .Where(l => l.Displayed).ToList();
+            var marked = links.Where(l => (l.Text ?? "").Contains("下载") || l.GetAttribute("download") != null).ToList();
+            IWebElement downloadLink = marked.Count == 1 ? marked[0] : links.Count == 1 ? links[0] :
+                throw new InvalidDataException("无法唯一确定下载链接 a:nth-child(1)。");
+
+            report("下载文件中…");
+            downloadLink.Click();
+            var downloaded = WaitForCompletedDownload(tempDirectory, TimeSpan.FromMinutes(2));
+            var filename = Path.GetFileName(downloaded);
+            if (string.IsNullOrWhiteSpace(filename)) filename = $"事故报表_{end:yyyy-MM-dd}.xlsx";
+            var target = Path.Combine(outputDirectory, filename);
+            var counter = 1;
+            while (File.Exists(target))
+            {
+                target = Path.Combine(outputDirectory,
+                    Path.GetFileNameWithoutExtension(filename) + "_" + counter++ + Path.GetExtension(filename));
+            }
+            File.Move(downloaded, target);
+            return target;
+        }
+        finally
+        {
+            try { Directory.Delete(tempDirectory, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        }
+    }
+
+    private static void SetDate(ChromeDriver browser, string selector, DateTime date)
+    {
+        string script = @"
+            var selector = arguments[0], ordinary = arguments[1], native = arguments[2];
+            var node = document.querySelector(selector);
+            if (!node) return '找不到日期控件：' + selector;
+            node.removeAttribute('readonly');
+            var value = node.type === 'date' ? native : ordinary;
+            var set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+            set.call(node, value);
+            node.dispatchEvent(new Event('input', {bubbles: true}));
+            node.dispatchEvent(new Event('change', {bubbles: true}));
+            node.dispatchEvent(new Event('blur', {bubbles: true}));
+            return '';";
+        string? error = ((IJavaScriptExecutor)browser).ExecuteScript(
+            script, selector, date.ToString("yyyy/MM/dd"), date.ToString("yyyy-MM-dd")) as string;
+        if (!string.IsNullOrEmpty(error)) throw new InvalidDataException(error);
+    }
+
+    private static string WaitForCompletedDownload(string folder, TimeSpan timeout)
+    {
+        var until = DateTime.UtcNow.Add(timeout);
+        string? last = null;
+        long size = -1;
+        int stable = 0;
+        while (DateTime.UtcNow < until)
+        {
+            var all = Directory.GetFiles(folder);
+            bool partial = all.Any(f => f.EndsWith(".crdownload", StringComparison.OrdinalIgnoreCase) ||
+                                        f.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase));
+            var ready = all.Where(f => !f.EndsWith(".crdownload", StringComparison.OrdinalIgnoreCase) &&
+                                       !f.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase))
+                           .OrderByDescending(File.GetLastWriteTimeUtc).FirstOrDefault();
+            if (!partial && ready != null)
+            {
+                long current = new FileInfo(ready).Length;
+                if (ready == last && current == size) stable++;
+                else { stable = 0; last = ready; size = current; }
+                if (stable >= 4) return ready;
+            }
+            Thread.Sleep(500);
+        }
+        throw new TimeoutException("2分钟内未检测到完整下载文件。");
+    }
+}
+
+internal sealed class MainForm : Form
+{
+    public MainForm()
+    {
+        Text = "事故数据工具 · C# V2.1 可配置版";
+        StartPosition = FormStartPosition.CenterScreen;
+        ClientSize = new Size(420, 320);
+        MinimumSize = new Size(420, 365);
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(24), RowCount = 5, ColumnCount = 1 };
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 55));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
+        Controls.Add(layout);
+        layout.Controls.Add(new Label {
+            Text = "事故数据工具", Font = new Font("Microsoft YaHei UI", 17, FontStyle.Bold),
+            AutoSize = false, TextAlign = ContentAlignment.MiddleCenter, Dock = DockStyle.Fill
+        }, 0, 0);
+        var download = new Button { Text = "下载数据", Dock = DockStyle.Fill };
+        download.Click += (_, _) => new DownloadForm().ShowDialog(this);
+        layout.Controls.Add(download, 0, 1);
+        var generate = new Button { Text = "生成数据报送", Dock = DockStyle.Fill };
+        generate.Click += (_, _) => Generate();
+        layout.Controls.Add(generate, 0, 2);
+        var editConfig = new Button { Text = "编辑工作表、范文与单元格（无需重新打包）", Dock = DockStyle.Fill };
+        editConfig.Click += (_, _) => EditConfig();
+        layout.Controls.Add(editConfig, 0, 3);
+        layout.Controls.Add(new Label {
+            Text = "离线 Chromium + Excel 读取 · config.json 可修改", ForeColor = Color.DimGray,
+            AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter
+        }, 0, 4);
+    }
+
+    private void EditConfig()
+    {
+        string path = ReportConfig.ConfigPath;
+        if (!File.Exists(path))
+        {
+            MessageBox.Show(this, "未找到 config.json，请确认该文件与 EXE 位于同一文件夹。", "配置文件缺失");
+            return;
+        }
+        try
+        {
+            Process.Start(new ProcessStartInfo {
+                FileName = "notepad.exe", Arguments = "\"" + path + "\"", UseShellExecute = false
+            });
+        }
+        catch (Exception e)
+        {
+            MessageBox.Show(this, e.Message, "无法打开配置文件", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    private void Generate()
+    {
+        using var picker = new OpenFileDialog {
+            Title = "选择事故数据文件", Filter = "表格文件 (*.xlsx;*.xls;*.csv)|*.xlsx;*.xls;*.csv|所有文件 (*.*)|*.*"
+        };
+        if (picker.ShowDialog(this) != DialogResult.OK) return;
+        try
+        {
+            string report = ReportBuilder.Generate(picker.FileName);
+            using var win = new Form {
+                Text = "生成的数据报送", StartPosition = FormStartPosition.CenterParent,
+                Width = 860, Height = 580
+            };
+            var preview = new TextBox {
+                Multiline = true, ScrollBars = ScrollBars.Both, WordWrap = true,
+                Dock = DockStyle.Fill, Font = new Font("Microsoft YaHei UI", 11), Text = report
+            };
+            var bar = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 52, FlowDirection = FlowDirection.LeftToRight };
+            var copy = new Button { Text = "复制全文", Width = 100 };
+            copy.Click += (_, _) => { Clipboard.SetText(preview.Text); MessageBox.Show(win, "文字已复制。"); };
+            var save = new Button { Text = "保存TXT", Width = 100 };
+            save.Click += (_, _) => {
+                using var dialog = new SaveFileDialog { Filter = "文本文件|*.txt", FileName = "事故报送_" + Path.GetFileNameWithoutExtension(picker.FileName) + ".txt" };
+                if (dialog.ShowDialog(win) == DialogResult.OK)
+                {
+                    File.WriteAllText(dialog.FileName, preview.Text, new UTF8Encoding(true));
+                    MessageBox.Show(win, "已保存。", "成功");
+                }
+            };
+            bar.Controls.Add(copy); bar.Controls.Add(save);
+            win.Controls.Add(preview); win.Controls.Add(bar);
+            win.ShowDialog(this);
+        }
+        catch (Exception ex) { MessageBox.Show(this, ex.Message, "报送生成失败", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+    }
+}
+
+internal sealed class DownloadForm : Form
+{
+    private readonly TextBox url = new() { Text = "http://68.66.666.666:6006/" };
+    private readonly TextBox begin = new() { Text = "2026/07/01" };
+    private readonly TextBox end = new() { Text = DateTime.Today.AddDays(-1).ToString("yyyy/MM/dd") };
+    private readonly TextBox folder = new() { Text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads") };
+    private readonly Label status = new() { Text = "待开始", ForeColor = Color.DarkBlue, AutoSize = true };
+    private readonly Button start = new() { Text = "生成并下载报表", Dock = DockStyle.Fill, Height = 36 };
+
+    public DownloadForm()
+    {
+        Text = "下载事故数据";
+        StartPosition = FormStartPosition.CenterParent;
+        ClientSize = new Size(760, 340);
+        MinimumSize = new Size(670, 350);
+        var panel = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(20), ColumnCount = 3, RowCount = 6 };
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 140));
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 82));
+        for (int i = 0; i < 4; i++) panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 55));
+        Controls.Add(panel);
+
+        void Add(int row, string name, TextBox editor)
+        {
+            panel.Controls.Add(new Label { Text = name, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, row);
+            editor.Dock = DockStyle.Fill;
+            panel.Controls.Add(editor, 1, row);
+        }
+        Add(0, "报表网址", url);
+        Add(1, "开始日期", begin);
+        Add(2, "截止日期（昨天）", end);
+        Add(3, "下载保存位置", folder);
+        var browse = new Button { Text = "浏览…", Dock = DockStyle.Fill };
+        browse.Click += (_, _) => {
+            using var picker = new FolderBrowserDialog { SelectedPath = folder.Text };
+            if (picker.ShowDialog(this) == DialogResult.OK) folder.Text = picker.SelectedPath;
+        };
+        panel.Controls.Add(browse, 2, 3);
+        panel.Controls.Add(status, 1, 4);
+        start.Click += StartClick;
+        panel.Controls.Add(start, 1, 5);
+    }
+
+    private async void StartClick(object? sender, EventArgs e)
+    {
+        if (!DateTime.TryParseExact(begin.Text.Trim(), "yyyy/MM/dd", CultureInfo.InvariantCulture,
+            DateTimeStyles.None, out var first) ||
+            !DateTime.TryParseExact(end.Text.Trim(), "yyyy/MM/dd", CultureInfo.InvariantCulture,
+            DateTimeStyles.None, out var last) || first > last)
+        { MessageBox.Show(this, "请检查起止日期，格式为 yyyy/MM/dd。", "日期不正确"); return; }
+        if (string.IsNullOrWhiteSpace(folder.Text))
+        { MessageBox.Show(this, "请选择下载目录。"); return; }
+
+        start.Enabled = false;
+        try
+        {
+            var result = await Task.Run(() => WebDownloader.Run(url.Text.Trim(), first, last, folder.Text.Trim(),
+                message => { if (IsHandleCreated && !IsDisposed) BeginInvoke(new Action(() => status.Text = message)); }));
+            status.Text = "下载完成：" + result;
+            MessageBox.Show(this, "文件已保存：\r\n" + result, "下载成功");
+        }
+        catch (Exception ex)
+        {
+            status.Text = "下载失败";
+            MessageBox.Show(this, ex.Message, "下载失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+        finally { start.Enabled = true; }
+    }
+}
